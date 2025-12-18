@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import type { NPC, DialogueReaction, EmotionType } from '@/types';
+import { generateNPCResponse as generateAIResponse } from '@/services/aiService';
 import {
   X,
   Send,
@@ -100,153 +101,6 @@ export function ChatUI({ npc, isOpen, onClose }: ChatUIProps) {
     return `${hour}:${time.minute.toString().padStart(2, '0')} ${ampm}`;
   };
 
-  const analyzeMessage = (msg: string): { tone: 'positive' | 'negative' | 'neutral'; topics: string[] } => {
-    const positiveWords = ['love', 'great', 'amazing', 'wonderful', 'happy', 'beautiful', 'thank', 'appreciate'];
-    const negativeWords = ['hate', 'awful', 'terrible', 'bad', 'sorry', 'sad', 'angry'];
-
-    const msgLower = msg.toLowerCase();
-    const hasPositive = positiveWords.some(w => msgLower.includes(w));
-    const hasNegative = negativeWords.some(w => msgLower.includes(w));
-
-    let tone: 'positive' | 'negative' | 'neutral' = 'neutral';
-    if (hasPositive && !hasNegative) tone = 'positive';
-    if (hasNegative && !hasPositive) tone = 'negative';
-
-    // Extract potential topics
-    const topics: string[] = [];
-    if (msgLower.includes('work') || msgLower.includes('job')) topics.push('work');
-    if (msgLower.includes('family')) topics.push('family');
-    if (msgLower.includes('hobby') || msgLower.includes('interest')) topics.push('interests');
-    if (msgLower.includes('date') || msgLower.includes('dinner') || msgLower.includes('movie')) topics.push('romantic');
-
-    return { tone, topics };
-  };
-
-  const generateNPCResponse = (playerMessage: string): string => {
-    const analysis = analyzeMessage(playerMessage);
-    const personality = npc.personality;
-    const relationship = npc.relationship;
-
-    // Simple response generation based on personality and relationship
-    const responses: string[] = [];
-
-    // Greeting responses
-    if (playerMessage.toLowerCase().includes('hello') || playerMessage.toLowerCase().includes('hey') || playerMessage.toLowerCase().includes('hi')) {
-      if (relationship.friendship > 50) {
-        responses.push(`Hey! It's so good to see you!`);
-        responses.push(`Oh hi! I was just thinking about you.`);
-      } else if (relationship.friendship > 20) {
-        responses.push(`Hey there! How have you been?`);
-        responses.push(`Hi! Nice to run into you.`);
-      } else {
-        responses.push(`Hello.`);
-        responses.push(`Hi, can I help you with something?`);
-      }
-    }
-
-    // Compliment responses
-    if (playerMessage.toLowerCase().includes('beautiful') || playerMessage.toLowerCase().includes('look great') || playerMessage.toLowerCase().includes('pretty')) {
-      if (relationship.romance > 30) {
-        responses.push(`*blushes* That's so sweet of you to say.`);
-        responses.push(`You're making me blush! Thank you.`);
-      } else if (relationship.friendship > 30) {
-        responses.push(`Oh, thank you! That's kind.`);
-      } else {
-        responses.push(`Um, thanks I guess.`);
-      }
-    }
-
-    // Question about how they're doing
-    if (playerMessage.toLowerCase().includes('how are you') || playerMessage.toLowerCase().includes('how\'s it going')) {
-      const moodResponses: Record<string, string[]> = {
-        happy: [`I'm doing great actually!`, `Really good, thanks for asking!`],
-        sad: [`Honestly, not the best day...`, `I've been better, but I'll manage.`],
-        content: [`Pretty good, just the usual.`, `Can't complain!`],
-        anxious: [`A bit stressed with work, but okay.`, `Got a lot on my mind...`],
-      };
-      const moodType = npc.currentState.mood.primary;
-      if (moodResponses[moodType]) {
-        responses.push(...moodResponses[moodType]);
-      } else {
-        responses.push(`I'm okay, thanks for asking!`);
-      }
-    }
-
-    // Date/hangout proposals
-    if (playerMessage.toLowerCase().includes('dinner') || playerMessage.toLowerCase().includes('date') || playerMessage.toLowerCase().includes('hang out')) {
-      if (relationship.romance > 40 || relationship.friendship > 50) {
-        responses.push(`I'd love that! When were you thinking?`);
-        responses.push(`That sounds fun! What did you have in mind?`);
-      } else if (relationship.trust > 30) {
-        responses.push(`Maybe... let me check my schedule.`);
-      } else {
-        responses.push(`I don't know if that's a good idea...`);
-        responses.push(`I'm pretty busy lately, sorry.`);
-      }
-    }
-
-    // Generic responses based on personality
-    if (responses.length === 0) {
-      if (personality.extraversion > 60) {
-        responses.push(`That's interesting! Tell me more.`);
-        responses.push(`Oh really? I love hearing about that kind of stuff!`);
-      } else {
-        responses.push(`I see.`);
-        responses.push(`That's nice.`);
-        responses.push(`Hmm, interesting.`);
-      }
-
-      if (analysis.tone === 'positive') {
-        responses.push(`You seem happy today, that's nice.`);
-      } else if (analysis.tone === 'negative') {
-        responses.push(`Is everything okay?`);
-      }
-    }
-
-    return responses[Math.floor(Math.random() * responses.length)];
-  };
-
-  const calculateRelationshipImpact = (playerMessage: string): Partial<typeof npc.relationship> => {
-    const analysis = analyzeMessage(playerMessage);
-    const changes: Partial<typeof npc.relationship> = {};
-
-    // Base relationship changes
-    if (analysis.tone === 'positive') {
-      changes.friendship = Math.min(100, npc.relationship.friendship + 1);
-      if (analysis.topics.includes('romantic')) {
-        changes.romance = Math.min(100, npc.relationship.romance + 2);
-      }
-    } else if (analysis.tone === 'negative') {
-      changes.friendship = Math.max(0, npc.relationship.friendship - 1);
-    }
-
-    return changes;
-  };
-
-  const generateMicroExpression = (playerMessage: string): string => {
-    const analysis = analyzeMessage(playerMessage);
-    const relationship = npc.relationship;
-
-    if (analysis.tone === 'positive') {
-      if (relationship.romance > 40) {
-        return '*her eyes light up and she leans in slightly*';
-      }
-      return '*she smiles warmly*';
-    } else if (analysis.tone === 'negative') {
-      return '*she shifts uncomfortably*';
-    }
-
-    if (analysis.topics.includes('romantic')) {
-      if (relationship.romance > 30) {
-        return '*a slight blush crosses her cheeks*';
-      } else {
-        return '*she glances away briefly*';
-      }
-    }
-
-    return '*she listens attentively*';
-  };
-
   const handleSend = async () => {
     if (!message.trim()) return;
 
@@ -262,29 +116,90 @@ export function ChatUI({ npc, isOpen, onClose }: ChatUIProps) {
     // Show typing indicator
     setIsTyping(true);
 
-    // Generate micro-expression reaction
-    const microExpression = generateMicroExpression(playerMessage);
-    setLastReaction({
-      type: 'positive',
-      intensity: 50,
-      microExpression,
-    });
+    // Get current player and game time from store
+    const { player, gameTime } = useGameStore.getState();
 
-    // Calculate relationship changes
-    const relationshipChanges = calculateRelationshipImpact(playerMessage);
-    if (Object.keys(relationshipChanges).length > 0) {
-      updateNPCRelationship(npc.id, relationshipChanges);
+    if (!player) {
+      setIsTyping(false);
+      return;
     }
 
-    // Simulate thinking time
-    await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+    // Build conversation history for AI context
+    const conversationHistory = dialogue?.conversationHistory.map(turn => ({
+      speaker: turn.speaker,
+      content: turn.content,
+    })) || [];
 
-    // Generate and add NPC response
-    const npcResponse = generateNPCResponse(playerMessage);
-    setIsTyping(false);
+    try {
+      // Generate AI response with relationship analysis
+      const aiResult = await generateAIResponse(
+        playerMessage,
+        npc,
+        player,
+        gameTime,
+        conversationHistory
+      );
 
-    addDialogueTurn('npc', npcResponse);
-    receiveMessage(npc.id, npcResponse);
+      // Set micro-expression reaction
+      setLastReaction({
+        type: aiResult.relationshipChanges.friendship && aiResult.relationshipChanges.friendship > npc.relationship.friendship
+          ? 'positive'
+          : aiResult.relationshipChanges.friendship && aiResult.relationshipChanges.friendship < npc.relationship.friendship
+          ? 'negative'
+          : 'neutral',
+        intensity: 50,
+        microExpression: aiResult.microExpression,
+      });
+
+      // Apply relationship changes
+      if (Object.keys(aiResult.relationshipChanges).length > 0) {
+        updateNPCRelationship(npc.id, aiResult.relationshipChanges);
+      }
+
+      // Add NPC memory of this interaction
+      const memoryDescription = `Had a conversation with ${player.name} where they said "${playerMessage.slice(0, 50)}${playerMessage.length > 50 ? '...' : ''}"`;
+
+      // Convert emotion to numeric impact
+      const emotionImpactMap: Record<string, number> = {
+        happy: 60, excited: 70, flirty: 50, content: 30,
+        sad: -40, frustrated: -50, angry: -70, anxious: -30,
+        bored: -10, lonely: -20, embarrassed: 10, jealous: -40,
+        grateful: 50, nostalgic: 20, hopeful: 40, confused: 0,
+      };
+      const emotionalImpactValue = emotionImpactMap[aiResult.detectedEmotion] || 0;
+
+      // Determine significance based on emotional impact
+      const significance: 'forgettable' | 'notable' | 'important' | 'pivotal' | 'defining' =
+        Math.abs(emotionalImpactValue) > 60 ? 'important' :
+        Math.abs(emotionalImpactValue) > 30 ? 'notable' : 'forgettable';
+
+      addNPCMemory(npc.id, {
+        description: memoryDescription,
+        day: gameTime.day,
+        emotionalImpact: emotionalImpactValue,
+        significance,
+        tags: ['conversation', aiResult.detectedEmotion],
+        referenceWeight: 60,
+        timesReferenced: 0,
+        involvedNPCs: [],
+        locationId: player.currentLocationId,
+      });
+
+      setIsTyping(false);
+
+      // Add NPC response to dialogue
+      addDialogueTurn('npc', aiResult.response);
+      receiveMessage(npc.id, aiResult.response);
+
+    } catch (error) {
+      console.error('Error generating AI response:', error);
+      setIsTyping(false);
+
+      // Fallback response on error
+      const fallbackResponse = "Sorry, I got distracted for a moment. What were you saying?";
+      addDialogueTurn('npc', fallbackResponse);
+      receiveMessage(npc.id, fallbackResponse);
+    }
 
     // Advance time slightly
     advanceTime(5);

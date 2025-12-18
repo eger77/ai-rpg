@@ -59,7 +59,7 @@ export function WardrobeUI({ isOpen, onClose }: WardrobeUIProps) {
 
   const getItemsForSlot = (slot: keyof Outfit): ClothingItem[] => {
     return player.wardrobe.filter((item) => {
-      if (slot === 'accessory') {
+      if (slot === 'accessory1' || slot === 'accessory2') {
         return item.slot === 'accessory';
       }
       return item.slot === slot;
