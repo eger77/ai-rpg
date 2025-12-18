@@ -1,0 +1,978 @@
+import { create } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
+import { persist } from 'zustand/middleware';
+import type {
+  GameTime,
+  Player,
+  NPC,
+  Location,
+  Quest,
+  GameEvent,
+  PhoneState,
+  Weather,
+  DayOfWeek,
+  TimeOfDay,
+  Message,
+  Notification,
+  Transaction,
+  NPCMemory,
+  DialogueState,
+} from '@/types';
+
+// =====================================================
+// GAME STATE INTERFACE
+// =====================================================
+
+interface GameState {
+  // Core State
+  initialized: boolean;
+  paused: boolean;
+  gameSpeed: number; // 1 = normal, 2 = fast, 0.5 = slow
+
+  // Time
+  gameTime: GameTime;
+  realTimeRatio: number; // Real minutes per game hour
+
+  // Entities
+  player: Player | null;
+  npcs: Map<string, NPC>;
+  locations: Map<string, Location>;
+  quests: Map<string, Quest>;
+  events: GameEvent[];
+
+  // Communication
+  phone: PhoneState | null;
+
+  // Dialogue
+  dialogue: DialogueState | null;
+
+  // Global Flags
+  globalFlags: Record<string, boolean | string | number>;
+
+  // World Wiki (auto-generated lore)
+  worldWiki: Map<string, { title: string; content: string; category: string }>;
+
+  // Pending Events Queue
+  eventQueue: GameEvent[];
+
+  // Statistics
+  totalPlayTime: number; // Minutes
+}
+
+interface GameActions {
+  // Initialization
+  initializeGame: (playerData: Partial<Player>) => void;
+  loadGame: (saveData: string) => void;
+  saveGame: () => string;
+  resetGame: () => void;
+
+  // Time Management
+  advanceTime: (minutes: number) => void;
+  setGameSpeed: (speed: number) => void;
+  pauseGame: () => void;
+  resumeGame: () => void;
+
+  // Player Actions
+  updatePlayer: (updates: Partial<Player>) => void;
+  updatePlayerStats: (stats: Partial<Player['stats']>) => void;
+  updatePlayerFinances: (finances: Partial<Player['finances']>) => void;
+  addTransaction: (transaction: Omit<Transaction, 'id' | 'timestamp'>) => void;
+  changeEnergy: (amount: number) => void;
+  changeStress: (amount: number) => void;
+  changeMood: (amount: number) => void;
+  changeHygiene: (amount: number) => void;
+  moveToLocation: (locationId: string) => void;
+
+  // NPC Actions
+  addNPC: (npc: NPC) => void;
+  updateNPC: (npcId: string, updates: Partial<NPC>) => void;
+  updateNPCRelationship: (npcId: string, updates: Partial<NPC['relationship']>) => void;
+  addNPCMemory: (npcId: string, memory: Omit<NPCMemory, 'id'>) => void;
+  getNPC: (npcId: string) => NPC | undefined;
+  getNPCsAtLocation: (locationId: string) => NPC[];
+
+  // Location Actions
+  addLocation: (location: Location) => void;
+  updateLocation: (locationId: string, updates: Partial<Location>) => void;
+  unlockLocation: (locationId: string) => void;
+  getLocation: (locationId: string) => Location | undefined;
+
+  // Quest Actions
+  addQuest: (quest: Quest) => void;
+  updateQuest: (questId: string, updates: Partial<Quest>) => void;
+  completeQuestObjective: (questId: string, objectiveId: string) => void;
+  failQuest: (questId: string) => void;
+
+  // Event Actions
+  triggerEvent: (event: GameEvent) => void;
+  queueEvent: (event: GameEvent) => void;
+  processEventQueue: () => GameEvent | null;
+
+  // Phone/Communication Actions
+  sendMessage: (npcId: string, content: string) => void;
+  receiveMessage: (npcId: string, content: string) => void;
+  addNotification: (notification: Omit<Notification, 'id' | 'timestamp'>) => void;
+  markMessageRead: (conversationId: string, messageId: string) => void;
+  markNotificationRead: (notificationId: string) => void;
+
+  // Dialogue Actions
+  startDialogue: (npcId: string) => void;
+  endDialogue: () => void;
+  addDialogueTurn: (speaker: 'player' | 'npc', content: string) => void;
+
+  // Utility Actions
+  setFlag: (key: string, value: boolean | string | number) => void;
+  getFlag: (key: string) => boolean | string | number | undefined;
+  addWikiEntry: (id: string, title: string, content: string, category: string) => void;
+
+  // Helpers
+  getTimeOfDay: () => TimeOfDay;
+  isLocationOpen: (locationId: string) => boolean;
+  canAfford: (amount: number) => boolean;
+}
+
+type GameStore = GameState & GameActions;
+
+// =====================================================
+// INITIAL STATE
+// =====================================================
+
+const initialState: GameState = {
+  initialized: false,
+  paused: false,
+  gameSpeed: 1,
+
+  gameTime: {
+    day: 1,
+    hour: 8,
+    minute: 0,
+    dayOfWeek: 'monday',
+    season: 'spring',
+    weather: 'sunny',
+  },
+  realTimeRatio: 1, // 1 real minute = 1 game hour
+
+  player: null,
+  npcs: new Map(),
+  locations: new Map(),
+  quests: new Map(),
+  events: [],
+
+  phone: null,
+  dialogue: null,
+
+  globalFlags: {},
+  worldWiki: new Map(),
+  eventQueue: [],
+
+  totalPlayTime: 0,
+};
+
+// =====================================================
+// HELPER FUNCTIONS
+// =====================================================
+
+const getDayOfWeek = (day: number): DayOfWeek => {
+  const days: DayOfWeek[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  return days[(day - 1) % 7];
+};
+
+const getTimeOfDay = (hour: number): TimeOfDay => {
+  if (hour >= 5 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 17) return 'afternoon';
+  if (hour >= 17 && hour < 21) return 'evening';
+  if (hour >= 21 || hour < 1) return 'night';
+  return 'late_night';
+};
+
+const generateId = () => Math.random().toString(36).substring(2, 15);
+
+// =====================================================
+// GAME STORE
+// =====================================================
+
+export const useGameStore = create<GameStore>()(
+  persist(
+    immer((set, get) => ({
+      ...initialState,
+
+      // ===== INITIALIZATION =====
+
+      initializeGame: (playerData) => {
+        set((state) => {
+          state.initialized = true;
+
+          // Create player with defaults
+          state.player = {
+            id: generateId(),
+            name: playerData.name || 'Player',
+            age: playerData.age || 25,
+            gender: playerData.gender || 'male',
+
+            stats: {
+              charisma: 50,
+              intelligence: 50,
+              empathy: 50,
+              humor: 50,
+              confidence: 50,
+              fitness: 50,
+              creativity: 50,
+              cooking: 20,
+              dancing: 20,
+              ...playerData.stats,
+            },
+
+            appearance: playerData.appearance || {
+              hairStyle: 'short',
+              hairColor: 'brown',
+              bodyType: 'average',
+              skinTone: 'medium',
+              height: 'average',
+            },
+
+            currentOutfit: playerData.currentOutfit || {
+              top: {
+                id: 'basic_tshirt',
+                name: 'Basic T-Shirt',
+                slot: 'top',
+                style: 'casual',
+                formalityLevel: 1,
+                condition: 100,
+                cleanliness: 100,
+                warmth: 2,
+                cost: 20,
+                color: 'white',
+                description: 'A simple white t-shirt',
+                isWet: false,
+                hasStain: false,
+              },
+              bottom: {
+                id: 'basic_jeans',
+                name: 'Blue Jeans',
+                slot: 'bottom',
+                style: 'casual',
+                formalityLevel: 2,
+                condition: 100,
+                cleanliness: 100,
+                warmth: 3,
+                cost: 50,
+                color: 'blue',
+                description: 'Classic blue jeans',
+                isWet: false,
+                hasStain: false,
+              },
+              shoes: {
+                id: 'basic_sneakers',
+                name: 'White Sneakers',
+                slot: 'shoes',
+                style: 'casual',
+                formalityLevel: 1,
+                condition: 100,
+                cleanliness: 100,
+                warmth: 2,
+                cost: 60,
+                color: 'white',
+                description: 'Comfortable white sneakers',
+                isWet: false,
+                hasStain: false,
+              },
+            },
+
+            wardrobe: [],
+
+            finances: {
+              balance: 1500,
+              monthlyIncome: 3200,
+              monthlyExpenses: 1650,
+              savingsGoals: [],
+              pendingBills: [
+                {
+                  id: 'rent',
+                  name: 'Rent',
+                  amount: 900,
+                  dueDay: 1,
+                  recurring: true,
+                  paid: false,
+                  category: 'rent',
+                },
+                {
+                  id: 'utilities',
+                  name: 'Utilities',
+                  amount: 150,
+                  dueDay: 5,
+                  recurring: true,
+                  paid: false,
+                  category: 'utilities',
+                },
+                {
+                  id: 'phone',
+                  name: 'Phone Bill',
+                  amount: 80,
+                  dueDay: 15,
+                  recurring: true,
+                  paid: false,
+                  category: 'subscription',
+                },
+              ],
+              transactions: [],
+              creditScore: 700,
+              ...playerData.finances,
+            },
+
+            career: playerData.career || {
+              employed: true,
+              companyName: 'TechVision Solutions',
+              position: 'Junior Marketing Associate',
+              department: 'Digital Marketing',
+              salary: 38400,
+              payFrequency: 'biweekly',
+              nextPayday: 14,
+              workDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+              workStartHour: 9,
+              workEndHour: 17,
+              performance: 70,
+              bossApproval: 60,
+              employmentDuration: 240,
+              promotionRequirements: [
+                { description: '6 months experience', met: true },
+                { description: 'Complete major project', met: false },
+                { description: 'Performance rating 85%+', met: false },
+                { description: 'Boss approval 80%+', met: false },
+              ],
+              workProjects: [],
+            },
+
+            energy: 100,
+            stress: 20,
+            mood: 70,
+            hygiene: 100,
+            hunger: 20,
+
+            currentLocationId: 'home',
+            homeLocationId: 'home',
+
+            reputation: 50,
+
+            inventory: [],
+            unlockedLocations: ['home', 'downtown_cafe', 'city_park', 'grocery_store'],
+            achievements: [],
+            flags: {},
+          };
+
+          // Initialize phone
+          state.phone = {
+            battery: 100,
+            signal: 4,
+            wifi: true,
+            conversations: [],
+            notifications: [],
+            callLog: [],
+            emails: [
+              {
+                id: 'welcome_email',
+                from: 'hr@techvision.com',
+                subject: 'Welcome to your new journey!',
+                body: 'Welcome! Your adventure begins today. Make the most of every moment.',
+                timestamp: state.gameTime,
+                read: false,
+                important: false,
+                category: 'work',
+                requiresResponse: false,
+              },
+            ],
+            contacts: [],
+            blockedContacts: [],
+            socialMediaFeed: [],
+          };
+        });
+      },
+
+      loadGame: (saveData) => {
+        try {
+          const parsed = JSON.parse(saveData);
+          set((state) => {
+            Object.assign(state, parsed);
+            // Convert Maps back from objects
+            state.npcs = new Map(Object.entries(parsed.npcs || {}));
+            state.locations = new Map(Object.entries(parsed.locations || {}));
+            state.quests = new Map(Object.entries(parsed.quests || {}));
+            state.worldWiki = new Map(Object.entries(parsed.worldWiki || {}));
+          });
+        } catch (e) {
+          console.error('Failed to load game:', e);
+        }
+      },
+
+      saveGame: () => {
+        const state = get();
+        const saveData = {
+          ...state,
+          npcs: Object.fromEntries(state.npcs),
+          locations: Object.fromEntries(state.locations),
+          quests: Object.fromEntries(state.quests),
+          worldWiki: Object.fromEntries(state.worldWiki),
+        };
+        return JSON.stringify(saveData);
+      },
+
+      resetGame: () => {
+        set(initialState);
+      },
+
+      // ===== TIME MANAGEMENT =====
+
+      advanceTime: (minutes) => {
+        set((state) => {
+          let newMinute = state.gameTime.minute + minutes;
+          let newHour = state.gameTime.hour;
+          let newDay = state.gameTime.day;
+
+          // Handle minute overflow
+          while (newMinute >= 60) {
+            newMinute -= 60;
+            newHour += 1;
+          }
+
+          // Handle hour overflow
+          while (newHour >= 24) {
+            newHour -= 24;
+            newDay += 1;
+          }
+
+          state.gameTime = {
+            ...state.gameTime,
+            minute: newMinute,
+            hour: newHour,
+            day: newDay,
+            dayOfWeek: getDayOfWeek(newDay),
+          };
+
+          // Update player stats based on time passing
+          if (state.player) {
+            // Energy decay
+            state.player.energy = Math.max(0, state.player.energy - minutes * 0.05);
+            // Hunger increases
+            state.player.hunger = Math.min(100, state.player.hunger + minutes * 0.03);
+            // Hygiene decay
+            state.player.hygiene = Math.max(0, state.player.hygiene - minutes * 0.02);
+          }
+
+          // Update NPC states
+          state.npcs.forEach((npc, id) => {
+            // Update location based on schedule
+            const currentSchedule = npc.defaultSchedule.find((s) => {
+              const matchesDay =
+                s.dayOfWeek === 'all' ||
+                s.dayOfWeek === state.gameTime.dayOfWeek ||
+                (s.dayOfWeek === 'weekday' && !['saturday', 'sunday'].includes(state.gameTime.dayOfWeek)) ||
+                (s.dayOfWeek === 'weekend' && ['saturday', 'sunday'].includes(state.gameTime.dayOfWeek));
+
+              return matchesDay && newHour >= s.startHour && newHour < s.endHour;
+            });
+
+            if (currentSchedule) {
+              state.npcs.set(id, {
+                ...npc,
+                currentState: {
+                  ...npc.currentState,
+                  currentLocationId: currentSchedule.locationId,
+                  currentActivity: currentSchedule.activity,
+                  availability: currentSchedule.interruptible ? 'available' : 'busy',
+                },
+              });
+            }
+
+            // Decay relationship if neglected
+            const relationship = npc.relationship;
+            if (relationship.daysSinceContact > 3) {
+              state.npcs.set(id, {
+                ...npc,
+                relationship: {
+                  ...relationship,
+                  friendship: Math.max(0, relationship.friendship - 0.5),
+                  romance: Math.max(0, relationship.romance - 1),
+                  neglectWarning: relationship.daysSinceContact > 5,
+                },
+              });
+            }
+          });
+
+          state.totalPlayTime += minutes;
+        });
+      },
+
+      setGameSpeed: (speed) => {
+        set((state) => {
+          state.gameSpeed = speed;
+        });
+      },
+
+      pauseGame: () => {
+        set((state) => {
+          state.paused = true;
+        });
+      },
+
+      resumeGame: () => {
+        set((state) => {
+          state.paused = false;
+        });
+      },
+
+      // ===== PLAYER ACTIONS =====
+
+      updatePlayer: (updates) => {
+        set((state) => {
+          if (state.player) {
+            Object.assign(state.player, updates);
+          }
+        });
+      },
+
+      updatePlayerStats: (stats) => {
+        set((state) => {
+          if (state.player) {
+            Object.assign(state.player.stats, stats);
+          }
+        });
+      },
+
+      updatePlayerFinances: (finances) => {
+        set((state) => {
+          if (state.player) {
+            Object.assign(state.player.finances, finances);
+          }
+        });
+      },
+
+      addTransaction: (transaction) => {
+        set((state) => {
+          if (state.player) {
+            const newTransaction = {
+              ...transaction,
+              id: generateId(),
+              timestamp: { ...state.gameTime },
+            };
+            state.player.finances.transactions.push(newTransaction);
+            state.player.finances.balance += transaction.amount;
+          }
+        });
+      },
+
+      changeEnergy: (amount) => {
+        set((state) => {
+          if (state.player) {
+            state.player.energy = Math.max(0, Math.min(100, state.player.energy + amount));
+          }
+        });
+      },
+
+      changeStress: (amount) => {
+        set((state) => {
+          if (state.player) {
+            state.player.stress = Math.max(0, Math.min(100, state.player.stress + amount));
+          }
+        });
+      },
+
+      changeMood: (amount) => {
+        set((state) => {
+          if (state.player) {
+            state.player.mood = Math.max(0, Math.min(100, state.player.mood + amount));
+          }
+        });
+      },
+
+      changeHygiene: (amount) => {
+        set((state) => {
+          if (state.player) {
+            state.player.hygiene = Math.max(0, Math.min(100, state.player.hygiene + amount));
+          }
+        });
+      },
+
+      moveToLocation: (locationId) => {
+        set((state) => {
+          if (state.player) {
+            const location = state.locations.get(locationId);
+            if (location && (location.unlocked || state.player.unlockedLocations.includes(locationId))) {
+              state.player.currentLocationId = locationId;
+            }
+          }
+        });
+      },
+
+      // ===== NPC ACTIONS =====
+
+      addNPC: (npc) => {
+        set((state) => {
+          state.npcs.set(npc.id, npc);
+
+          // Add to phone contacts
+          if (state.phone) {
+            state.phone.contacts.push({
+              id: generateId(),
+              npcId: npc.id,
+              blocked: false,
+              favorite: false,
+            });
+
+            // Create conversation
+            state.phone.conversations.push({
+              id: generateId(),
+              npcId: npc.id,
+              messages: [],
+              unreadCount: 0,
+              lastMessageTime: state.gameTime,
+              typing: false,
+              readReceipts: true,
+            });
+          }
+        });
+      },
+
+      updateNPC: (npcId, updates) => {
+        set((state) => {
+          const npc = state.npcs.get(npcId);
+          if (npc) {
+            state.npcs.set(npcId, { ...npc, ...updates });
+          }
+        });
+      },
+
+      updateNPCRelationship: (npcId, updates) => {
+        set((state) => {
+          const npc = state.npcs.get(npcId);
+          if (npc) {
+            state.npcs.set(npcId, {
+              ...npc,
+              relationship: { ...npc.relationship, ...updates },
+            });
+          }
+        });
+      },
+
+      addNPCMemory: (npcId, memory) => {
+        set((state) => {
+          const npc = state.npcs.get(npcId);
+          if (npc) {
+            const newMemory = { ...memory, id: generateId() };
+            state.npcs.set(npcId, {
+              ...npc,
+              memories: [...npc.memories, newMemory],
+            });
+          }
+        });
+      },
+
+      getNPC: (npcId) => {
+        return get().npcs.get(npcId);
+      },
+
+      getNPCsAtLocation: (locationId) => {
+        const npcs: NPC[] = [];
+        get().npcs.forEach((npc) => {
+          if (npc.currentState.currentLocationId === locationId) {
+            npcs.push(npc);
+          }
+        });
+        return npcs;
+      },
+
+      // ===== LOCATION ACTIONS =====
+
+      addLocation: (location) => {
+        set((state) => {
+          state.locations.set(location.id, location);
+        });
+      },
+
+      updateLocation: (locationId, updates) => {
+        set((state) => {
+          const location = state.locations.get(locationId);
+          if (location) {
+            state.locations.set(locationId, { ...location, ...updates });
+          }
+        });
+      },
+
+      unlockLocation: (locationId) => {
+        set((state) => {
+          const location = state.locations.get(locationId);
+          if (location) {
+            state.locations.set(locationId, { ...location, unlocked: true });
+          }
+          if (state.player && !state.player.unlockedLocations.includes(locationId)) {
+            state.player.unlockedLocations.push(locationId);
+          }
+        });
+      },
+
+      getLocation: (locationId) => {
+        return get().locations.get(locationId);
+      },
+
+      // ===== QUEST ACTIONS =====
+
+      addQuest: (quest) => {
+        set((state) => {
+          state.quests.set(quest.id, quest);
+        });
+      },
+
+      updateQuest: (questId, updates) => {
+        set((state) => {
+          const quest = state.quests.get(questId);
+          if (quest) {
+            state.quests.set(questId, { ...quest, ...updates });
+          }
+        });
+      },
+
+      completeQuestObjective: (questId, objectiveId) => {
+        set((state) => {
+          const quest = state.quests.get(questId);
+          if (quest) {
+            const updatedObjectives = quest.objectives.map((obj) =>
+              obj.id === objectiveId ? { ...obj, completed: true } : obj
+            );
+            const allComplete = updatedObjectives.every((obj) => obj.completed);
+            state.quests.set(questId, {
+              ...quest,
+              objectives: updatedObjectives,
+              status: allComplete ? 'completed' : quest.status,
+              completedOnDay: allComplete ? state.gameTime.day : undefined,
+            });
+          }
+        });
+      },
+
+      failQuest: (questId) => {
+        set((state) => {
+          const quest = state.quests.get(questId);
+          if (quest) {
+            state.quests.set(questId, { ...quest, status: 'failed' });
+          }
+        });
+      },
+
+      // ===== EVENT ACTIONS =====
+
+      triggerEvent: (event) => {
+        set((state) => {
+          state.events.push({ ...event, triggered: true, triggeredOnDay: state.gameTime.day });
+        });
+      },
+
+      queueEvent: (event) => {
+        set((state) => {
+          state.eventQueue.push(event);
+          // Sort by priority
+          state.eventQueue.sort((a, b) => b.priority - a.priority);
+        });
+      },
+
+      processEventQueue: () => {
+        const state = get();
+        if (state.eventQueue.length === 0) return null;
+
+        const event = state.eventQueue[0];
+        set((s) => {
+          s.eventQueue.shift();
+        });
+        return event;
+      },
+
+      // ===== PHONE/COMMUNICATION ACTIONS =====
+
+      sendMessage: (npcId, content) => {
+        set((state) => {
+          if (state.phone) {
+            const conversation = state.phone.conversations.find((c) => c.npcId === npcId);
+            if (conversation) {
+              const newMessage: Message = {
+                id: generateId(),
+                senderId: 'player',
+                content,
+                timestamp: { ...state.gameTime },
+                read: true,
+                delivered: true,
+              };
+              conversation.messages.push(newMessage);
+              conversation.lastMessageTime = { ...state.gameTime };
+            }
+          }
+
+          // Reset days since contact
+          const npc = state.npcs.get(npcId);
+          if (npc) {
+            state.npcs.set(npcId, {
+              ...npc,
+              relationship: { ...npc.relationship, daysSinceContact: 0, neglectWarning: false },
+            });
+          }
+        });
+      },
+
+      receiveMessage: (npcId, content) => {
+        set((state) => {
+          if (state.phone) {
+            const conversation = state.phone.conversations.find((c) => c.npcId === npcId);
+            if (conversation) {
+              const newMessage: Message = {
+                id: generateId(),
+                senderId: npcId,
+                content,
+                timestamp: { ...state.gameTime },
+                read: false,
+                delivered: true,
+              };
+              conversation.messages.push(newMessage);
+              conversation.unreadCount += 1;
+              conversation.lastMessageTime = { ...state.gameTime };
+
+              // Add notification
+              const npc = state.npcs.get(npcId);
+              state.phone.notifications.push({
+                id: generateId(),
+                type: 'message',
+                title: npc?.name || 'New Message',
+                body: content.substring(0, 50) + (content.length > 50 ? '...' : ''),
+                timestamp: { ...state.gameTime },
+                read: false,
+                sourceNpcId: npcId,
+                urgent: false,
+              });
+            }
+          }
+        });
+      },
+
+      addNotification: (notification) => {
+        set((state) => {
+          if (state.phone) {
+            state.phone.notifications.push({
+              ...notification,
+              id: generateId(),
+              timestamp: { ...state.gameTime },
+            });
+          }
+        });
+      },
+
+      markMessageRead: (conversationId, messageId) => {
+        set((state) => {
+          if (state.phone) {
+            const conversation = state.phone.conversations.find((c) => c.id === conversationId);
+            if (conversation) {
+              const message = conversation.messages.find((m) => m.id === messageId);
+              if (message && !message.read) {
+                message.read = true;
+                conversation.unreadCount = Math.max(0, conversation.unreadCount - 1);
+              }
+            }
+          }
+        });
+      },
+
+      markNotificationRead: (notificationId) => {
+        set((state) => {
+          if (state.phone) {
+            const notification = state.phone.notifications.find((n) => n.id === notificationId);
+            if (notification) {
+              notification.read = true;
+            }
+          }
+        });
+      },
+
+      // ===== DIALOGUE ACTIONS =====
+
+      startDialogue: (npcId) => {
+        set((state) => {
+          state.dialogue = {
+            activeNpcId: npcId,
+            currentTopic: null,
+            conversationHistory: [],
+            availableTopics: [],
+            moodShifts: [],
+            lastResponseReaction: null,
+          };
+        });
+      },
+
+      endDialogue: () => {
+        set((state) => {
+          state.dialogue = null;
+        });
+      },
+
+      addDialogueTurn: (speaker, content) => {
+        set((state) => {
+          if (state.dialogue) {
+            state.dialogue.conversationHistory.push({
+              speaker,
+              content,
+              timestamp: { ...state.gameTime },
+            });
+          }
+        });
+      },
+
+      // ===== UTILITY ACTIONS =====
+
+      setFlag: (key, value) => {
+        set((state) => {
+          state.globalFlags[key] = value;
+        });
+      },
+
+      getFlag: (key) => {
+        return get().globalFlags[key];
+      },
+
+      addWikiEntry: (id, title, content, category) => {
+        set((state) => {
+          state.worldWiki.set(id, { title, content, category });
+        });
+      },
+
+      // ===== HELPERS =====
+
+      getTimeOfDay: () => {
+        return getTimeOfDay(get().gameTime.hour);
+      },
+
+      isLocationOpen: (locationId) => {
+        const state = get();
+        const location = state.locations.get(locationId);
+        if (!location) return false;
+        if (location.openHours === 'always') return true;
+        if (location.closedDays.includes(state.gameTime.dayOfWeek)) return false;
+        const { hour } = state.gameTime;
+        return hour >= location.openHours.open && hour < location.openHours.close;
+      },
+
+      canAfford: (amount) => {
+        const state = get();
+        return (state.player?.finances.balance ?? 0) >= amount;
+      },
+    })),
+    {
+      name: 'ai-rpg-save',
+      partialize: (state) => ({
+        initialized: state.initialized,
+        gameTime: state.gameTime,
+        player: state.player,
+        npcs: Object.fromEntries(state.npcs),
+        locations: Object.fromEntries(state.locations),
+        quests: Object.fromEntries(state.quests),
+        events: state.events,
+        phone: state.phone,
+        globalFlags: state.globalFlags,
+        worldWiki: Object.fromEntries(state.worldWiki),
+        totalPlayTime: state.totalPlayTime,
+      }),
+    }
+  )
+);
