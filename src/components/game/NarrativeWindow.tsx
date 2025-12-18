@@ -22,6 +22,9 @@ import {
   MapPin,
   Heart,
   X,
+  RefreshCw,
+  Trash2,
+  MoreVertical,
 } from 'lucide-react';
 
 interface NarrativeWindowProps {
@@ -50,6 +53,12 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
   const [activeNPC, setActiveNPC] = useState<NPC | null>(null);
   const [currentChoices, setCurrentChoices] = useState<NarrativeChoice[]>([]);
   const [sceneType, setSceneType] = useState<'exploration' | 'dialogue' | 'activity' | 'event'>('exploration');
+  const [lastPlayerMessage, setLastPlayerMessage] = useState<string>('');
+  const [messageMenuOpen, setMessageMenuOpen] = useState<string | null>(null);
+  const [lastRelationshipChanges, setLastRelationshipChanges] = useState<{
+    npcId: string;
+    changes: Partial<NPC['relationship']>;
+  } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -151,6 +160,8 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
     const playerMessage = inputText.trim();
     setInputText('');
     setIsGenerating(true);
+    setLastPlayerMessage(playerMessage);
+    setLastRelationshipChanges(null);
 
     // Add player message
     const playerMsg: NarrativeMessage = {
@@ -221,8 +232,12 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
       setMessages((prev) => [...prev, actionMsg]);
     }
 
-    // Apply relationship changes
+    // Apply relationship changes and store them for potential reversal
     if (Object.keys(result.relationshipChanges).length > 0) {
+      setLastRelationshipChanges({
+        npcId: activeNPC.id,
+        changes: result.relationshipChanges,
+      });
       updateNPCRelationship(activeNPC.id, result.relationshipChanges);
     }
 
@@ -423,6 +438,127 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
     setMessages((prev) => [...prev, msg]);
   };
 
+  // Delete a message and reverse any relationship changes if it was an NPC message
+  const deleteMessage = (messageId: string) => {
+    const messageToDelete = messages.find((m) => m.id === messageId);
+    if (!messageToDelete) return;
+
+    // If deleting an NPC dialogue message, reverse relationship changes
+    if (messageToDelete.type === 'dialogue' && messageToDelete.speakerId && lastRelationshipChanges) {
+      if (lastRelationshipChanges.npcId === messageToDelete.speakerId) {
+        const npc = npcs.get(messageToDelete.speakerId);
+        if (npc) {
+          const reversal: Partial<NPC['relationship']> = {};
+          const changes = lastRelationshipChanges.changes;
+
+          // Reverse each change that was applied
+          if (changes.friendship !== undefined) {
+            const diff = changes.friendship - npc.relationship.friendship;
+            reversal.friendship = npc.relationship.friendship - diff;
+          }
+          if (changes.romance !== undefined) {
+            const diff = changes.romance - npc.relationship.romance;
+            reversal.romance = npc.relationship.romance - diff;
+          }
+          if (changes.trust !== undefined) {
+            const diff = changes.trust - npc.relationship.trust;
+            reversal.trust = npc.relationship.trust - diff;
+          }
+          if (changes.respect !== undefined) {
+            const diff = changes.respect - npc.relationship.respect;
+            reversal.respect = npc.relationship.respect - diff;
+          }
+
+          if (Object.keys(reversal).length > 0) {
+            updateNPCRelationship(messageToDelete.speakerId, reversal);
+          }
+        }
+        setLastRelationshipChanges(null);
+      }
+    }
+
+    // Remove the message
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    setMessageMenuOpen(null);
+
+    // Also delete associated action messages (micro-expressions)
+    if (messageToDelete.type === 'dialogue') {
+      setMessages((prev) => prev.filter((m) => !m.id.startsWith(messageId.replace('_dialogue', ''))));
+    }
+  };
+
+  // Regenerate the last AI response
+  const regenerateLastResponse = async () => {
+    if (!lastPlayerMessage || isGenerating || !player) return;
+
+    // Find and remove the last AI messages (could be dialogue + action)
+    const lastAIMessageIndex = [...messages].reverse().findIndex(
+      (m) => m.type === 'dialogue' || m.type === 'narration'
+    );
+
+    if (lastAIMessageIndex === -1) return;
+
+    const actualIndex = messages.length - 1 - lastAIMessageIndex;
+    const lastAIMessage = messages[actualIndex];
+
+    // Reverse relationship changes if applicable
+    if (lastRelationshipChanges && lastAIMessage.speakerId === lastRelationshipChanges.npcId) {
+      const npc = npcs.get(lastRelationshipChanges.npcId);
+      if (npc) {
+        const reversal: Partial<NPC['relationship']> = {};
+        const changes = lastRelationshipChanges.changes;
+
+        if (changes.friendship !== undefined) {
+          reversal.friendship = npc.relationship.friendship * 2 - changes.friendship;
+        }
+        if (changes.romance !== undefined) {
+          reversal.romance = npc.relationship.romance * 2 - changes.romance;
+        }
+        if (changes.trust !== undefined) {
+          reversal.trust = npc.relationship.trust * 2 - changes.trust;
+        }
+        if (changes.respect !== undefined) {
+          reversal.respect = npc.relationship.respect * 2 - changes.respect;
+        }
+
+        if (Object.keys(reversal).length > 0) {
+          updateNPCRelationship(lastRelationshipChanges.npcId, reversal);
+        }
+      }
+    }
+
+    // Remove the last AI messages (dialogue + any action)
+    setMessages((prev) => {
+      const newMessages = [...prev];
+      // Remove from the end any dialogue/narration and associated actions
+      while (newMessages.length > 0) {
+        const lastMsg = newMessages[newMessages.length - 1];
+        if (lastMsg.type === 'dialogue' || lastMsg.type === 'narration' ||
+            lastMsg.type === 'npc_action' || lastMsg.type === 'system') {
+          newMessages.pop();
+        } else {
+          break;
+        }
+      }
+      return newMessages;
+    });
+
+    setIsGenerating(true);
+
+    try {
+      if (activeNPC && sceneType === 'dialogue') {
+        await handleNPCConversation(lastPlayerMessage);
+      } else {
+        await handleNarrativeAction(lastPlayerMessage);
+      }
+    } catch (error) {
+      console.error('Error regenerating response:', error);
+      addSystemMessage('Failed to regenerate. Try again.');
+    }
+
+    setIsGenerating(false);
+  };
+
   const formatTime = (time: typeof gameTime) => {
     const hour = time.hour % 12 || 12;
     const ampm = time.hour >= 12 ? 'PM' : 'AM';
@@ -481,63 +617,146 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg) => (
-          <div key={msg.id} className="animate-fadeIn">
-            {msg.type === 'narration' && (
-              <div className="text-gray-300 leading-relaxed italic">
-                {msg.content}
-              </div>
-            )}
+        {messages.map((msg, index) => {
+          const isLastAIMessage = index === messages.length - 1 &&
+            (msg.type === 'dialogue' || msg.type === 'narration');
+          const canDelete = msg.type !== 'player_action' && messages.length > 1;
+          const showMenu = messageMenuOpen === msg.id;
 
-            {msg.type === 'dialogue' && (
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
-                  <span className="text-white text-sm font-bold">
-                    {msg.speaker?.charAt(0)}
-                  </span>
-                </div>
-                <div className="flex-1">
-                  <p className="text-purple-400 text-sm font-medium mb-1">{msg.speaker}</p>
-                  <div className="bg-gray-800 rounded-2xl rounded-tl-sm px-4 py-3 text-white">
+          return (
+            <div key={msg.id} className="animate-fadeIn group relative">
+              {msg.type === 'narration' && (
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 text-gray-300 leading-relaxed italic">
                     {msg.content}
                   </div>
+                  {canDelete && (
+                    <div className="relative">
+                      <button
+                        onClick={() => setMessageMenuOpen(showMenu ? null : msg.id)}
+                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-700 rounded text-gray-500 hover:text-white transition-all"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+                      {showMenu && (
+                        <div className="absolute right-0 top-6 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-10 py-1 min-w-[140px]">
+                          {isLastAIMessage && lastPlayerMessage && (
+                            <button
+                              onClick={regenerateLastResponse}
+                              className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                            >
+                              <RefreshCw className="w-4 h-4" /> Regenerate
+                            </button>
+                          )}
+                          <button
+                            onClick={() => deleteMessage(msg.id)}
+                            className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-gray-700 flex items-center gap-2"
+                          >
+                            <Trash2 className="w-4 h-4" /> Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              )}
 
-            {msg.type === 'player_action' && (
-              <div className="flex gap-3 justify-end">
-                <div className="max-w-[80%]">
-                  <div className="bg-purple-600 rounded-2xl rounded-tr-sm px-4 py-3 text-white">
-                    {msg.content}
+              {msg.type === 'dialogue' && (
+                <div className="flex gap-3">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
+                    <span className="text-white text-sm font-bold">
+                      {msg.speaker?.charAt(0)}
+                    </span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-purple-400 text-sm font-medium mb-1">{msg.speaker}</p>
+                    <div className="flex items-start gap-2">
+                      <div className="bg-gray-800 rounded-2xl rounded-tl-sm px-4 py-3 text-white flex-1">
+                        {msg.content}
+                      </div>
+                      <div className="relative">
+                        <button
+                          onClick={() => setMessageMenuOpen(showMenu ? null : msg.id)}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-700 rounded text-gray-500 hover:text-white transition-all"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+                        {showMenu && (
+                          <div className="absolute right-0 top-6 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-10 py-1 min-w-[140px]">
+                            {isLastAIMessage && lastPlayerMessage && (
+                              <button
+                                onClick={regenerateLastResponse}
+                                className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                              >
+                                <RefreshCw className="w-4 h-4" /> Regenerate
+                              </button>
+                            )}
+                            <button
+                              onClick={() => deleteMessage(msg.id)}
+                              className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-gray-700 flex items-center gap-2"
+                            >
+                              <Trash2 className="w-4 h-4" /> Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center flex-shrink-0">
-                  <User className="w-4 h-4 text-white" />
+              )}
+
+              {msg.type === 'player_action' && (
+                <div className="flex gap-3 justify-end">
+                  <div className="max-w-[80%] flex items-start gap-2">
+                    <div className="relative">
+                      <button
+                        onClick={() => setMessageMenuOpen(showMenu ? null : msg.id)}
+                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-700 rounded text-gray-500 hover:text-white transition-all"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+                      {showMenu && (
+                        <div className="absolute left-0 top-6 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-10 py-1 min-w-[140px]">
+                          <button
+                            onClick={() => deleteMessage(msg.id)}
+                            className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-gray-700 flex items-center gap-2"
+                          >
+                            <Trash2 className="w-4 h-4" /> Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="bg-purple-600 rounded-2xl rounded-tr-sm px-4 py-3 text-white">
+                      {msg.content}
+                    </div>
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center flex-shrink-0">
+                    <User className="w-4 h-4 text-white" />
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {msg.type === 'npc_action' && (
-              <div className="text-gray-500 text-sm italic pl-11">
-                {msg.content}
-              </div>
-            )}
+              {msg.type === 'npc_action' && (
+                <div className="text-gray-500 text-sm italic pl-11">
+                  {msg.content}
+                </div>
+              )}
 
-            {msg.type === 'system' && (
-              <div className="text-center text-gray-500 text-sm py-2">
-                {msg.content}
-              </div>
-            )}
+              {msg.type === 'system' && (
+                <div className="text-center text-gray-500 text-sm py-2">
+                  {msg.content}
+                </div>
+              )}
 
-            {msg.type === 'thought' && (
-              <div className="text-gray-400 text-sm italic text-center py-2">
-                <Sparkles className="w-4 h-4 inline mr-2" />
-                {msg.content}
-              </div>
-            )}
-          </div>
-        ))}
+              {msg.type === 'thought' && (
+                <div className="text-gray-400 text-sm italic text-center py-2">
+                  <Sparkles className="w-4 h-4 inline mr-2" />
+                  {msg.content}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         {isGenerating && (
           <div className="flex items-center gap-2 text-gray-400">
