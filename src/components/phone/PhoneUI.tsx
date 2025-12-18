@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useGameStore } from '@/stores/gameStore';
+import { generateNPCResponse } from '@/services/aiService';
 import type { Email } from '@/types';
 import {
   Smartphone,
@@ -80,25 +81,96 @@ export function PhoneUI({ isOpen, onClose }: PhoneUIProps) {
   const selectedConversation = phone.conversations.find((c) => c.id === selectedConversationId);
   const selectedEmail = emails.find((e) => e.id === selectedEmailId);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!messageInput.trim() || !selectedConversation) return;
-    sendTextMessage(selectedConversation.npcId, messageInput.trim());
+
+    const playerMessage = messageInput.trim();
+    sendTextMessage(selectedConversation.npcId, playerMessage);
     setMessageInput('');
 
-    // Simulate NPC response after a delay
-    setTimeout(() => {
-      const npc = npcs.get(selectedConversation.npcId);
-      if (npc) {
-        // This would normally trigger AI response - for now just add notification
-        addNotification({
-          type: 'message',
-          title: npc.name,
-          body: 'Sent you a message',
-          read: false,
-          urgent: false,
-        });
+    const npc = npcs.get(selectedConversation.npcId);
+    const { player, gameTime, receiveMessage, updateNPCRelationship, addNPCMemory, setConversationTyping } = useGameStore.getState();
+
+    // Show typing indicator
+    setConversationTyping(selectedConversation.npcId, true);
+
+    if (!npc || !player) {
+      setConversationTyping(selectedConversation.npcId, false);
+      return;
+    }
+
+    // Build conversation history from messages
+    const conversationHistory = selectedConversation.messages.map((msg) => ({
+      speaker: msg.senderId === 'player' ? 'player' as const : 'npc' as const,
+      content: msg.content,
+    }));
+
+    try {
+      // Generate AI response using Grok
+      const aiResult = await generateNPCResponse(
+        playerMessage,
+        npc,
+        player,
+        gameTime,
+        conversationHistory
+      );
+
+      // Turn off typing indicator and receive the AI-generated message
+      setConversationTyping(selectedConversation.npcId, false);
+      receiveMessage(selectedConversation.npcId, aiResult.response);
+
+      // Apply relationship changes
+      if (Object.keys(aiResult.relationshipChanges).length > 0) {
+        updateNPCRelationship(npc.id, aiResult.relationshipChanges);
       }
-    }, 2000);
+
+      // Add memory of this text conversation
+      const emotionImpactMap: Record<string, number> = {
+        happy: 60, excited: 70, flirty: 50, content: 30,
+        sad: -40, frustrated: -50, angry: -70, anxious: -30,
+        bored: -10, lonely: -20, embarrassed: 10, jealous: -40,
+        grateful: 50, nostalgic: 20, hopeful: 40, confused: 0,
+      };
+      const emotionalImpactValue = emotionImpactMap[aiResult.detectedEmotion] || 0;
+      const significance: 'forgettable' | 'notable' | 'important' | 'pivotal' | 'defining' =
+        Math.abs(emotionalImpactValue) > 60 ? 'important' :
+        Math.abs(emotionalImpactValue) > 30 ? 'notable' : 'forgettable';
+
+      addNPCMemory(npc.id, {
+        description: `Texted with ${player.name}: "${playerMessage.slice(0, 40)}${playerMessage.length > 40 ? '...' : ''}"`,
+        day: gameTime.day,
+        emotionalImpact: emotionalImpactValue,
+        significance,
+        tags: ['text_message', aiResult.detectedEmotion],
+        referenceWeight: 40,
+        timesReferenced: 0,
+        involvedNPCs: [],
+        locationId: undefined,
+      });
+
+      // Show notification
+      addNotification({
+        type: 'message',
+        title: npc.name,
+        body: aiResult.response.slice(0, 50) + (aiResult.response.length > 50 ? '...' : ''),
+        read: false,
+        urgent: false,
+      });
+    } catch (error) {
+      console.error('Error generating AI response for text:', error);
+      // Turn off typing and send fallback response
+      setConversationTyping(selectedConversation.npcId, false);
+      const fallbackResponse = "Hey! Sorry, got a bit distracted. What's up?";
+      receiveMessage(selectedConversation.npcId, fallbackResponse);
+
+      addNotification({
+        type: 'message',
+        title: npc.name,
+        body: fallbackResponse,
+        read: false,
+        urgent: false,
+      });
+    }
   };
 
   const openConversation = (conversationId: string) => {

@@ -119,6 +119,7 @@ interface GameActions {
   sendMessage: (npcId: string, content: string) => void;
   sendTextMessage: (npcId: string, content: string) => void;
   receiveMessage: (npcId: string, content: string) => void;
+  setConversationTyping: (npcId: string, typing: boolean) => void;
   addNotification: (notification: Omit<Notification, 'id' | 'timestamp'>) => void;
   markMessageRead: (conversationId: string, messageId: string) => void;
   markNotificationRead: (notificationId: string) => void;
@@ -865,6 +866,17 @@ export const useGameStore = create<GameStore>()(
                 sourceNpcId: npcId,
                 urgent: false,
               });
+            }
+          }
+        });
+      },
+
+      setConversationTyping: (npcId, typing) => {
+        set((state) => {
+          if (state.phone) {
+            const conversation = state.phone.conversations.find((c) => c.npcId === npcId);
+            if (conversation) {
+              conversation.typing = typing;
             }
           }
         });
