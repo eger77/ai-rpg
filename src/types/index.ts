@@ -774,16 +774,15 @@ export interface CallLogEntry {
 export interface Email {
   id: string;
   from: string;
+  fromAddress: string;
   subject: string;
   body: string;
   timestamp: GameTime;
   read: boolean;
-  important: boolean;
-  category: 'work' | 'personal' | 'billing' | 'social' | 'spam' | 'newsletter';
-
-  // Possible actions
-  requiresResponse: boolean;
-  deadline?: GameTime;
+  starred: boolean;
+  folder: 'inbox' | 'sent' | 'drafts' | 'trash';
+  replyToId?: string;
+  attachments?: { name: string; type: string }[];
 }
 
 export interface Contact {
@@ -998,4 +997,35 @@ export interface WorldWikiEntry {
   discovered: boolean;
   discoveredOnDay?: number;
   linkedEntries: string[];
+}
+
+// =====================================================
+// WORLD SETTINGS (Character/World Creation)
+// =====================================================
+
+export interface WorldSettings {
+  // City/World settings
+  cityName: string;
+  cityStyle: 'modern' | 'medieval' | 'futuristic' | 'steampunk' | 'fantasy' | 'cyberpunk' | 'victorian';
+  citySize: 'small' | 'medium' | 'large';
+  climate: 'tropical' | 'temperate' | 'arctic' | 'desert' | 'mediterranean';
+
+  // Player background
+  careerPath: string;           // Typeable career/job
+  startingScenario: string;     // Starting situation description
+
+  // Visual settings
+  artStyle: 'anime' | 'realistic' | 'cartoon' | 'painterly';
+
+  // Generated assets
+  cityMapUrl?: string;
+  locationImages: Record<string, string>;  // locationId -> imageUrl
+
+  // World state
+  generatedLocations: string[]; // IDs of procedurally generated locations
+}
+
+export interface EmailState {
+  emails: Email[];
+  unreadCount: number;
 }

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
+import { NarrativeWindow } from './NarrativeWindow';
 import type { NPC, Location } from '@/types';
 import {
   User,
@@ -348,135 +349,9 @@ export function GameDashboard({
           </div>
         </div>
 
-        {/* Main Area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Current Location */}
-          <div className="p-6">
-            <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl border border-gray-700 overflow-hidden">
-              {/* Location Header */}
-              <div className="h-40 bg-gradient-to-br from-purple-600/30 via-pink-600/30 to-rose-600/30 relative">
-                <div className="absolute inset-0 bg-gradient-to-t from-gray-900 to-transparent" />
-                <div className="absolute bottom-4 left-6">
-                  <div className="flex items-center gap-2 text-gray-300 mb-1">
-                    <MapPin className="w-4 h-4" />
-                    <span className="text-sm">Current Location</span>
-                  </div>
-                  <h2 className="text-2xl font-bold text-white">{currentLocation?.name || 'Unknown'}</h2>
-                </div>
-                <button
-                  onClick={() => currentLocation && onViewLocation(currentLocation)}
-                  className="absolute bottom-4 right-6 px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur rounded-lg text-white text-sm transition-colors"
-                >
-                  View Details
-                </button>
-              </div>
-
-              {/* Location Content */}
-              <div className="p-6">
-                <p className="text-gray-400 mb-6">{currentLocation?.ambiance}</p>
-
-                {/* NPCs Here */}
-                {npcsHere.length > 0 && (
-                  <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                      <Users className="w-5 h-5 text-purple-400" />
-                      People Here ({npcsHere.length})
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {npcsHere.map((npc) => (
-                        <button
-                          key={npc.id}
-                          onClick={() => onViewNPC(npc)}
-                          className="flex items-center gap-3 p-4 bg-gray-800/50 hover:bg-gray-700/50 rounded-xl transition-colors text-left"
-                        >
-                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-lg">
-                            {npc.name.charAt(0)}
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-white font-medium">{npc.name}</p>
-                            <p className="text-sm text-gray-400">{npc.currentState.currentActivity}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span
-                                className={`w-2 h-2 rounded-full ${
-                                  npc.currentState.availability === 'available'
-                                    ? 'bg-green-500'
-                                    : npc.currentState.availability === 'busy'
-                                    ? 'bg-yellow-500'
-                                    : 'bg-red-500'
-                                }`}
-                              />
-                              <span className="text-xs text-gray-500 capitalize">{npc.currentState.availability}</span>
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {npcsHere.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                    <p>No one else is here right now</p>
-                  </div>
-                )}
-
-                {/* Quick Activities */}
-                {currentLocation && currentLocation.availableActivities.length > 0 && (
-                  <div>
-                    <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                      <Star className="w-5 h-5 text-yellow-400" />
-                      Things to Do
-                    </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                      {currentLocation.availableActivities.slice(0, 8).map((activity) => (
-                        <button
-                          key={activity.id}
-                          className="p-3 bg-gray-800/50 hover:bg-gray-700/50 rounded-lg text-left transition-colors"
-                        >
-                          <p className="text-white text-sm font-medium">{activity.name}</p>
-                          <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
-                            <span>{activity.duration}m</span>
-                            {activity.moneyCost > 0 && <span>${activity.moneyCost}</span>}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Nearby Locations */}
-          {currentLocation && currentLocation.connectedLocations.length > 0 && (
-            <div className="px-6 pb-6">
-              <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-blue-400" />
-                Nearby Locations
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                {currentLocation.connectedLocations.map((conn) => {
-                  const loc = locations.get(conn.locationId);
-                  if (!loc) return null;
-
-                  return (
-                    <button
-                      key={conn.locationId}
-                      onClick={() => onViewLocation(loc)}
-                      className="p-4 bg-gray-800/50 hover:bg-gray-700/50 rounded-xl text-left transition-colors"
-                    >
-                      <p className="text-white font-medium">{loc.name}</p>
-                      <div className="flex items-center gap-2 mt-1 text-sm text-gray-400">
-                        <Clock className="w-4 h-4" />
-                        <span>{conn.travelTime} min</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+        {/* Main Area - Narrative Window */}
+        <div className="flex-1 flex flex-col overflow-hidden p-4">
+          <NarrativeWindow onViewNPC={onViewNPC} onOpenMap={onOpenMap} />
         </div>
       </div>
     </div>

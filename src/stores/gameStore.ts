@@ -17,6 +17,9 @@ import type {
   Transaction,
   NPCMemory,
   DialogueState,
+  WorldSettings,
+  Email,
+  EmailState,
 } from '@/types';
 
 // =====================================================
@@ -33,6 +36,9 @@ interface GameState {
   gameTime: GameTime;
   realTimeRatio: number; // Real minutes per game hour
 
+  // World Settings
+  worldSettings: WorldSettings | null;
+
   // Entities
   player: Player | null;
   npcs: Map<string, NPC>;
@@ -42,6 +48,7 @@ interface GameState {
 
   // Communication
   phone: PhoneState | null;
+  emailState: EmailState | null;
 
   // Dialogue
   dialogue: DialogueState | null;
@@ -110,10 +117,22 @@ interface GameActions {
 
   // Phone/Communication Actions
   sendMessage: (npcId: string, content: string) => void;
+  sendTextMessage: (npcId: string, content: string) => void;
   receiveMessage: (npcId: string, content: string) => void;
   addNotification: (notification: Omit<Notification, 'id' | 'timestamp'>) => void;
   markMessageRead: (conversationId: string, messageId: string) => void;
   markNotificationRead: (notificationId: string) => void;
+
+  // Email Actions
+  addEmail: (email: Omit<Email, 'id'>) => void;
+  markEmailRead: (emailId: string) => void;
+  deleteEmail: (emailId: string) => void;
+  replyToEmail: (emailId: string, body: string) => void;
+
+  // World Settings Actions
+  setWorldSettings: (settings: WorldSettings) => void;
+  updateWorldSettings: (updates: Partial<WorldSettings>) => void;
+  setLocationImage: (locationId: string, imageUrl: string) => void;
 
   // Dialogue Actions
   startDialogue: (npcId: string) => void;
@@ -152,6 +171,8 @@ const initialState: GameState = {
   },
   realTimeRatio: 1, // 1 real minute = 1 game hour
 
+  worldSettings: null,
+
   player: null,
   npcs: new Map(),
   locations: new Map(),
@@ -159,6 +180,7 @@ const initialState: GameState = {
   events: [],
 
   phone: null,
+  emailState: null,
   dialogue: null,
 
   globalFlags: {},
@@ -370,14 +392,14 @@ export const useGameStore = create<GameStore>()(
             emails: [
               {
                 id: 'welcome_email',
-                from: 'hr@techvision.com',
+                from: 'City Welcome Center',
+                fromAddress: 'welcome@city.gov',
                 subject: 'Welcome to your new journey!',
-                body: 'Welcome! Your adventure begins today. Make the most of every moment.',
-                timestamp: state.gameTime,
+                body: 'Welcome! Your adventure begins today. Make the most of every moment.\n\nWe hope you enjoy your time in our wonderful city. Feel free to explore, meet new people, and discover all that life has to offer.',
+                timestamp: { ...state.gameTime },
                 read: false,
-                important: false,
-                category: 'work',
-                requiresResponse: false,
+                starred: false,
+                folder: 'inbox',
               },
             ],
             contacts: [],
@@ -882,6 +904,149 @@ export const useGameStore = create<GameStore>()(
             if (notification) {
               notification.read = true;
             }
+          }
+        });
+      },
+
+      sendTextMessage: (npcId, content) => {
+        set((state) => {
+          if (state.phone) {
+            let conversation = state.phone.conversations.find((c) => c.npcId === npcId);
+            if (!conversation) {
+              // Create new conversation if it doesn't exist
+              const newConv = {
+                id: generateId(),
+                npcId,
+                messages: [] as Message[],
+                unreadCount: 0,
+                lastMessageTime: { ...state.gameTime },
+                typing: false,
+                readReceipts: true,
+              };
+              state.phone.conversations.push(newConv);
+              conversation = newConv;
+            }
+            const newMessage: Message = {
+              id: generateId(),
+              senderId: 'player',
+              content,
+              timestamp: { ...state.gameTime },
+              read: true,
+              delivered: true,
+            };
+            conversation.messages.push(newMessage);
+            conversation.lastMessageTime = { ...state.gameTime };
+          }
+
+          // Reset days since contact
+          const npc = state.npcs.get(npcId);
+          if (npc) {
+            state.npcs.set(npcId, {
+              ...npc,
+              relationship: { ...npc.relationship, daysSinceContact: 0, neglectWarning: false },
+            });
+          }
+        });
+      },
+
+      // ===== EMAIL ACTIONS =====
+
+      addEmail: (email) => {
+        set((state) => {
+          if (!state.emailState) {
+            state.emailState = { emails: [], unreadCount: 0 };
+          }
+          const newEmail = { ...email, id: generateId() };
+          state.emailState.emails.unshift(newEmail);
+          if (!newEmail.read) {
+            state.emailState.unreadCount += 1;
+          }
+
+          // Add notification for new email
+          if (state.phone && email.folder === 'inbox') {
+            state.phone.notifications.push({
+              id: generateId(),
+              type: 'email',
+              title: `Email from ${email.from}`,
+              body: email.subject,
+              timestamp: { ...state.gameTime },
+              read: false,
+              urgent: false,
+            });
+          }
+        });
+      },
+
+      markEmailRead: (emailId) => {
+        set((state) => {
+          if (state.emailState) {
+            const email = state.emailState.emails.find((e) => e.id === emailId);
+            if (email && !email.read) {
+              email.read = true;
+              state.emailState.unreadCount = Math.max(0, state.emailState.unreadCount - 1);
+            }
+          }
+        });
+      },
+
+      deleteEmail: (emailId) => {
+        set((state) => {
+          if (state.emailState) {
+            const index = state.emailState.emails.findIndex((e) => e.id === emailId);
+            if (index !== -1) {
+              const email = state.emailState.emails[index];
+              if (!email.read) {
+                state.emailState.unreadCount = Math.max(0, state.emailState.unreadCount - 1);
+              }
+              state.emailState.emails.splice(index, 1);
+            }
+          }
+        });
+      },
+
+      replyToEmail: (emailId, body) => {
+        set((state) => {
+          if (state.emailState && state.player) {
+            const originalEmail = state.emailState.emails.find((e) => e.id === emailId);
+            if (originalEmail) {
+              const replyEmail: Email = {
+                id: generateId(),
+                from: state.player.name,
+                fromAddress: `${state.player.name.toLowerCase().replace(' ', '.')}@email.com`,
+                subject: `Re: ${originalEmail.subject}`,
+                body,
+                timestamp: { ...state.gameTime },
+                read: true,
+                starred: false,
+                folder: 'sent',
+                replyToId: emailId,
+              };
+              state.emailState.emails.unshift(replyEmail);
+            }
+          }
+        });
+      },
+
+      // ===== WORLD SETTINGS ACTIONS =====
+
+      setWorldSettings: (settings) => {
+        set((state) => {
+          state.worldSettings = settings;
+        });
+      },
+
+      updateWorldSettings: (updates) => {
+        set((state) => {
+          if (state.worldSettings) {
+            state.worldSettings = { ...state.worldSettings, ...updates };
+          }
+        });
+      },
+
+      setLocationImage: (locationId, imageUrl) => {
+        set((state) => {
+          if (state.worldSettings) {
+            state.worldSettings.locationImages[locationId] = imageUrl;
           }
         });
       },

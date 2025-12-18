@@ -4,10 +4,10 @@ import { useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { generateInitialNPCs } from '@/systems/npcGenerator';
 import { getStarterLocations } from '@/data/locations';
-import type { Gender, PlayerAppearance, PlayerStats } from '@/types';
-import { User, Palette, Brain, ChevronRight, ChevronLeft, Sparkles } from 'lucide-react';
+import type { Gender, PlayerAppearance, PlayerStats, WorldSettings } from '@/types';
+import { User, Palette, Brain, ChevronRight, ChevronLeft, Sparkles, MapPin, Briefcase, Globe } from 'lucide-react';
 
-type CreationStep = 'basics' | 'appearance' | 'stats' | 'review';
+type CreationStep = 'basics' | 'world' | 'appearance' | 'stats' | 'review';
 
 interface CharacterData {
   name: string;
@@ -15,6 +15,16 @@ interface CharacterData {
   gender: Gender;
   appearance: PlayerAppearance;
   stats: PlayerStats;
+}
+
+interface WorldData {
+  cityName: string;
+  cityStyle: WorldSettings['cityStyle'];
+  citySize: WorldSettings['citySize'];
+  climate: WorldSettings['climate'];
+  careerPath: string;
+  startingScenario: string;
+  artStyle: WorldSettings['artStyle'];
 }
 
 const HAIR_STYLES = {
@@ -27,6 +37,45 @@ const HAIR_COLORS = ['Black', 'Dark Brown', 'Brown', 'Light Brown', 'Blonde', 'D
 const BODY_TYPES = ['Slim', 'Athletic', 'Average', 'Muscular', 'Curvy', 'Petite', 'Tall'];
 const SKIN_TONES = ['Fair', 'Light', 'Medium', 'Olive', 'Tan', 'Brown', 'Dark'];
 const HEIGHTS = ['Short', 'Below Average', 'Average', 'Above Average', 'Tall'];
+
+const CITY_STYLES: { value: WorldSettings['cityStyle']; label: string; desc: string }[] = [
+  { value: 'modern', label: 'Modern', desc: 'Contemporary urban city with skyscrapers and tech' },
+  { value: 'medieval', label: 'Medieval', desc: 'Castle towns, cobblestone streets, and fantasy' },
+  { value: 'futuristic', label: 'Futuristic', desc: 'Neon lights, hovercars, and advanced tech' },
+  { value: 'cyberpunk', label: 'Cyberpunk', desc: 'Dark, gritty, high-tech low-life aesthetic' },
+  { value: 'victorian', label: 'Victorian', desc: 'Elegant 19th century architecture and culture' },
+  { value: 'fantasy', label: 'Fantasy', desc: 'Magic, mythical creatures, and enchanted places' },
+];
+
+const CLIMATES: { value: WorldSettings['climate']; label: string }[] = [
+  { value: 'temperate', label: 'Temperate (Mild seasons)' },
+  { value: 'tropical', label: 'Tropical (Warm & humid)' },
+  { value: 'mediterranean', label: 'Mediterranean (Warm & sunny)' },
+  { value: 'arctic', label: 'Arctic (Cold & snowy)' },
+  { value: 'desert', label: 'Desert (Hot & dry)' },
+];
+
+const CITY_SIZES: { value: WorldSettings['citySize']; label: string }[] = [
+  { value: 'small', label: 'Small Town (Cozy, everyone knows everyone)' },
+  { value: 'medium', label: 'Medium City (Good balance of urban and suburban)' },
+  { value: 'large', label: 'Large Metropolis (Bustling, diverse, endless opportunities)' },
+];
+
+const ART_STYLES: { value: WorldSettings['artStyle']; label: string }[] = [
+  { value: 'anime', label: 'Anime Style' },
+  { value: 'realistic', label: 'Realistic' },
+  { value: 'cartoon', label: 'Cartoon' },
+  { value: 'painterly', label: 'Painterly/Artistic' },
+];
+
+const SCENARIO_PRESETS = [
+  'Just moved to town for a fresh start after a difficult breakup',
+  'Starting a new job and looking to build connections',
+  'Returned to hometown after years away, reconnecting with old friends',
+  'College graduate navigating the real world for the first time',
+  'Inheriting a small business and learning to run it',
+  'Artist pursuing their passion while working a day job',
+];
 
 const DEFAULT_STATS: PlayerStats = {
   charisma: 50,
@@ -52,10 +101,12 @@ const STAT_DESCRIPTIONS: Record<keyof PlayerStats, string> = {
   dancing: 'Grace and rhythm on the dance floor',
 };
 
+const steps: CreationStep[] = ['basics', 'world', 'appearance', 'stats', 'review'];
+
 export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState<CreationStep>('basics');
   const [isGenerating, setIsGenerating] = useState(false);
-  const { initializeGame, addNPC, addLocation } = useGameStore();
+  const { initializeGame, addNPC, addLocation, setWorldSettings } = useGameStore();
 
   const [character, setCharacter] = useState<CharacterData>({
     name: '',
@@ -71,10 +122,24 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
     stats: { ...DEFAULT_STATS },
   });
 
-  const [statPoints, setStatPoints] = useState(20); // Bonus points to distribute
+  const [world, setWorld] = useState<WorldData>({
+    cityName: '',
+    cityStyle: 'modern',
+    citySize: 'medium',
+    climate: 'temperate',
+    careerPath: '',
+    startingScenario: '',
+    artStyle: 'anime',
+  });
+
+  const [statPoints, setStatPoints] = useState(20);
 
   const updateCharacter = <K extends keyof CharacterData>(key: K, value: CharacterData[K]) => {
     setCharacter((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateWorld = <K extends keyof WorldData>(key: K, value: WorldData[K]) => {
+    setWorld((prev) => ({ ...prev, [key]: value }));
   };
 
   const updateAppearance = <K extends keyof PlayerAppearance>(key: K, value: PlayerAppearance[K]) => {
@@ -100,6 +165,20 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
 
   const handleComplete = async () => {
     setIsGenerating(true);
+
+    // Set world settings
+    const worldSettings: WorldSettings = {
+      cityName: world.cityName || 'New Haven',
+      cityStyle: world.cityStyle,
+      citySize: world.citySize,
+      climate: world.climate,
+      careerPath: world.careerPath || 'Office Worker',
+      startingScenario: world.startingScenario || 'Starting a new chapter in life',
+      artStyle: world.artStyle,
+      locationImages: {},
+      generatedLocations: [],
+    };
+    setWorldSettings(worldSettings);
 
     // Initialize the game with player data
     initializeGame({
@@ -129,6 +208,8 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
     switch (step) {
       case 'basics':
         return character.name.trim().length >= 2 && character.age >= 18 && character.age <= 60;
+      case 'world':
+        return world.cityName.trim().length >= 2 && world.careerPath.trim().length >= 2;
       case 'appearance':
         return true;
       case 'stats':
@@ -141,7 +222,6 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
   };
 
   const nextStep = () => {
-    const steps: CreationStep[] = ['basics', 'appearance', 'stats', 'review'];
     const currentIndex = steps.indexOf(step);
     if (currentIndex < steps.length - 1) {
       setStep(steps[currentIndex + 1]);
@@ -149,7 +229,6 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
   };
 
   const prevStep = () => {
-    const steps: CreationStep[] = ['basics', 'appearance', 'stats', 'review'];
     const currentIndex = steps.indexOf(step);
     if (currentIndex > 0) {
       setStep(steps[currentIndex - 1]);
@@ -161,9 +240,9 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
       <div className="w-full max-w-2xl bg-gray-800/80 backdrop-blur rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-purple-600 to-pink-600 p-6">
-          <h1 className="text-2xl font-bold text-white text-center">Create Your Character</h1>
+          <h1 className="text-2xl font-bold text-white text-center">Create Your Story</h1>
           <div className="flex justify-center gap-2 mt-4">
-            {(['basics', 'appearance', 'stats', 'review'] as CreationStep[]).map((s, i) => (
+            {steps.map((s, i) => (
               <div
                 key={s}
                 className={`w-3 h-3 rounded-full transition-colors ${
@@ -175,17 +254,17 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="p-6 max-h-[60vh] overflow-y-auto">
           {/* Step: Basics */}
           {step === 'basics' && (
             <div className="space-y-6">
               <div className="flex items-center gap-3 mb-6">
                 <User className="w-6 h-6 text-purple-400" />
-                <h2 className="text-xl font-semibold text-white">Basic Information</h2>
+                <h2 className="text-xl font-semibold text-white">Who Are You?</h2>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Name</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Your Name</label>
                 <input
                   type="text"
                   value={character.name}
@@ -221,6 +300,143 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
                       }`}
                     >
                       {g.charAt(0).toUpperCase() + g.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step: World Settings */}
+          {step === 'world' && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-3 mb-6">
+                <Globe className="w-6 h-6 text-purple-400" />
+                <h2 className="text-xl font-semibold text-white">Your World</h2>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <MapPin className="w-4 h-4 inline mr-1" />
+                  City Name
+                </label>
+                <input
+                  type="text"
+                  value={world.cityName}
+                  onChange={(e) => updateWorld('cityName', e.target.value)}
+                  placeholder="e.g., New Haven, Starlight Bay, Crimson City..."
+                  className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">City Style</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {CITY_STYLES.map((style) => (
+                    <button
+                      key={style.value}
+                      onClick={() => updateWorld('cityStyle', style.value)}
+                      className={`p-3 rounded-lg text-left transition-colors ${
+                        world.cityStyle === style.value
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50'
+                      }`}
+                    >
+                      <span className="font-medium">{style.label}</span>
+                      <p className="text-xs opacity-70 mt-1">{style.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">City Size</label>
+                  <select
+                    value={world.citySize}
+                    onChange={(e) => updateWorld('citySize', e.target.value as WorldSettings['citySize'])}
+                    className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    {CITY_SIZES.map((size) => (
+                      <option key={size.value} value={size.value}>
+                        {size.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Climate</label>
+                  <select
+                    value={world.climate}
+                    onChange={(e) => updateWorld('climate', e.target.value as WorldSettings['climate'])}
+                    className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    {CLIMATES.map((climate) => (
+                      <option key={climate.value} value={climate.value}>
+                        {climate.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <Briefcase className="w-4 h-4 inline mr-1" />
+                  Your Career/Job
+                </label>
+                <input
+                  type="text"
+                  value={world.careerPath}
+                  onChange={(e) => updateWorld('careerPath', e.target.value)}
+                  placeholder="e.g., Software Developer, Artist, Cafe Owner, Doctor..."
+                  className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <Sparkles className="w-4 h-4 inline mr-1" />
+                  Your Starting Scenario
+                </label>
+                <textarea
+                  value={world.startingScenario}
+                  onChange={(e) => updateWorld('startingScenario', e.target.value)}
+                  placeholder="Describe your character's situation at the start of the story..."
+                  rows={3}
+                  className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                />
+                <div className="mt-2">
+                  <p className="text-xs text-gray-500 mb-2">Quick scenarios:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {SCENARIO_PRESETS.slice(0, 4).map((preset, i) => (
+                      <button
+                        key={i}
+                        onClick={() => updateWorld('startingScenario', preset)}
+                        className="px-2 py-1 text-xs bg-gray-700/50 text-gray-400 hover:text-white hover:bg-gray-600/50 rounded transition-colors"
+                      >
+                        {preset.slice(0, 30)}...
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Art Style</label>
+                <div className="flex gap-2">
+                  {ART_STYLES.map((style) => (
+                    <button
+                      key={style.value}
+                      onClick={() => updateWorld('artStyle', style.value)}
+                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        world.artStyle === style.value
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50'
+                      }`}
+                    >
+                      {style.label}
                     </button>
                   ))}
                 </div>
@@ -328,7 +544,7 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
                 </div>
               </div>
 
-              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+              <div className="space-y-3">
                 {(Object.keys(character.stats) as (keyof PlayerStats)[]).map((stat) => (
                   <div key={stat} className="bg-gray-700/30 rounded-lg p-3">
                     <div className="flex items-center justify-between mb-2">
@@ -371,10 +587,11 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
             <div className="space-y-6">
               <div className="flex items-center gap-3 mb-6">
                 <Sparkles className="w-6 h-6 text-purple-400" />
-                <h2 className="text-xl font-semibold text-white">Review Your Character</h2>
+                <h2 className="text-xl font-semibold text-white">Your Story Begins</h2>
               </div>
 
               <div className="bg-gray-700/30 rounded-lg p-4 space-y-4">
+                {/* Character */}
                 <div className="flex items-center gap-4">
                   <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-2xl font-bold text-white">
                     {character.name.charAt(0).toUpperCase()}
@@ -382,11 +599,35 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
                   <div>
                     <h3 className="text-xl font-bold text-white">{character.name || 'Unnamed'}</h3>
                     <p className="text-gray-400">
-                      {character.age} years old • {character.gender}
+                      {character.age} years old • {character.gender} • {world.careerPath || 'Undecided'}
                     </p>
                   </div>
                 </div>
 
+                {/* World */}
+                <div className="border-t border-gray-600 pt-4">
+                  <h4 className="text-sm font-medium text-gray-400 mb-2 flex items-center gap-2">
+                    <Globe className="w-4 h-4" />
+                    World
+                  </h4>
+                  <p className="text-gray-300">
+                    <span className="text-white font-medium">{world.cityName || 'Unknown City'}</span> - A{' '}
+                    {world.citySize} {world.cityStyle} city with {world.climate} climate
+                  </p>
+                </div>
+
+                {/* Scenario */}
+                <div className="border-t border-gray-600 pt-4">
+                  <h4 className="text-sm font-medium text-gray-400 mb-2 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4" />
+                    Starting Scenario
+                  </h4>
+                  <p className="text-gray-300 italic">
+                    "{world.startingScenario || 'Beginning a new chapter in life...'}"
+                  </p>
+                </div>
+
+                {/* Appearance */}
                 <div className="border-t border-gray-600 pt-4">
                   <h4 className="text-sm font-medium text-gray-400 mb-2">Appearance</h4>
                   <p className="text-gray-300">
@@ -396,6 +637,7 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
                   </p>
                 </div>
 
+                {/* Top Attributes */}
                 <div className="border-t border-gray-600 pt-4">
                   <h4 className="text-sm font-medium text-gray-400 mb-2">Top Attributes</h4>
                   <div className="flex flex-wrap gap-2">
@@ -461,5 +703,3 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
     </div>
   );
 }
-
-const steps: CreationStep[] = ['basics', 'appearance', 'stats', 'review'];
