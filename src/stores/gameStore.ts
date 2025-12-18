@@ -1283,7 +1283,26 @@ export const useGameStore = create<GameStore>()(
         globalFlags: state.globalFlags,
         worldWiki: Object.fromEntries(state.worldWiki),
         totalPlayTime: state.totalPlayTime,
+        worldSettings: state.worldSettings,
+        emailState: state.emailState,
       }),
+      onRehydrateStorage: () => (state) => {
+        // Convert plain objects back to Maps after rehydration
+        if (state) {
+          if (state.npcs && !(state.npcs instanceof Map)) {
+            state.npcs = new Map(Object.entries(state.npcs));
+          }
+          if (state.locations && !(state.locations instanceof Map)) {
+            state.locations = new Map(Object.entries(state.locations));
+          }
+          if (state.quests && !(state.quests instanceof Map)) {
+            state.quests = new Map(Object.entries(state.quests));
+          }
+          if (state.worldWiki && !(state.worldWiki instanceof Map)) {
+            state.worldWiki = new Map(Object.entries(state.worldWiki));
+          }
+        }
+      },
     }
   )
 );
