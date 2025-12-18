@@ -95,8 +95,11 @@ interface GameActions {
   updateNPC: (npcId: string, updates: Partial<NPC>) => void;
   updateNPCRelationship: (npcId: string, updates: Partial<NPC['relationship']>) => void;
   addNPCMemory: (npcId: string, memory: Omit<NPCMemory, 'id'>) => void;
+  setNPCPortrait: (npcId: string, portraitUrl: string) => void;
+  addKnownFact: (npcId: string, fact: string, canReference?: boolean) => void;
   getNPC: (npcId: string) => NPC | undefined;
   getNPCsAtLocation: (locationId: string) => NPC[];
+  triggerNPCInitiatedMessage: () => void;
 
   // Location Actions
   addLocation: (location: Location) => void;
@@ -522,6 +525,11 @@ export const useGameStore = create<GameStore>()(
 
           state.totalPlayTime += minutes;
         });
+
+        // Occasionally trigger NPC-initiated messages (every ~30 game minutes on average)
+        if (Math.random() < minutes / 30) {
+          get().triggerNPCInitiatedMessage();
+        }
       },
 
       setGameSpeed: (speed) => {
@@ -688,6 +696,38 @@ export const useGameStore = create<GameStore>()(
         });
       },
 
+      setNPCPortrait: (npcId, portraitUrl) => {
+        set((state) => {
+          const npc = state.npcs.get(npcId);
+          if (npc) {
+            state.npcs.set(npcId, {
+              ...npc,
+              appearance: { ...npc.appearance, portraitUrl },
+            });
+          }
+        });
+      },
+
+      addKnownFact: (npcId, fact, canReference = true) => {
+        set((state) => {
+          const npc = state.npcs.get(npcId);
+          if (npc) {
+            const newFact = {
+              id: generateId(),
+              category: 'personal' as const,
+              fact,
+              discoveredOnDay: state.gameTime.day,
+              importance: 'minor' as const,
+              canReference,
+            };
+            state.npcs.set(npcId, {
+              ...npc,
+              knownFacts: [...npc.knownFacts, newFact],
+            });
+          }
+        });
+      },
+
       getNPC: (npcId) => {
         return get().npcs.get(npcId);
       },
@@ -700,6 +740,100 @@ export const useGameStore = create<GameStore>()(
           }
         });
         return npcs;
+      },
+
+      triggerNPCInitiatedMessage: () => {
+        const state = get();
+        if (!state.player || !state.phone) return;
+
+        // Get NPCs the player knows (has had contact with)
+        const knownNPCs: NPC[] = [];
+        state.npcs.forEach((npc) => {
+          if (npc.relationship.totalInteractions > 0 || npc.relationship.friendship > 10) {
+            knownNPCs.push(npc);
+          }
+        });
+
+        if (knownNPCs.length === 0) return;
+
+        // Random chance for NPC to message (higher relationship = higher chance)
+        const npc = knownNPCs[Math.floor(Math.random() * knownNPCs.length)];
+        const messageProbability = Math.min(0.3, (npc.relationship.friendship + npc.relationship.romance) / 500);
+
+        if (Math.random() > messageProbability) return;
+
+        // Generate a contextual message based on relationship
+        const greetings = [
+          `Hey ${state.player.name}! How's it going?`,
+          `Was just thinking about you. What are you up to?`,
+          `Hey! Got a sec to chat?`,
+          `Hope you're having a good day!`,
+        ];
+        const friendlyMessages = [
+          `Wanna hang out sometime?`,
+          `Did you see that thing on the news?`,
+          `Coffee later?`,
+          `Miss our chats! Let's catch up soon`,
+        ];
+        const romanticMessages = [
+          `Can't stop thinking about our last conversation...`,
+          `When can I see you again?`,
+          `You make me smile 😊`,
+          `Are you free this weekend?`,
+        ];
+
+        let messages = greetings;
+        if (npc.relationship.friendship > 40) {
+          messages = [...messages, ...friendlyMessages];
+        }
+        if (npc.relationship.romance > 30) {
+          messages = [...messages, ...romanticMessages];
+        }
+
+        const content = messages[Math.floor(Math.random() * messages.length)];
+
+        // Check if conversation exists, create if not
+        set((s) => {
+          if (!s.phone) return;
+
+          let conversation = s.phone.conversations.find((c) => c.npcId === npc.id);
+          if (!conversation) {
+            conversation = {
+              id: generateId(),
+              npcId: npc.id,
+              messages: [],
+              unreadCount: 0,
+              lastMessageTime: { ...s.gameTime },
+              typing: false,
+              readReceipts: true,
+            };
+            s.phone.conversations.push(conversation);
+          }
+
+          const newMessage: Message = {
+            id: generateId(),
+            senderId: npc.id,
+            content,
+            timestamp: { ...s.gameTime },
+            read: false,
+            delivered: true,
+          };
+          conversation.messages.push(newMessage);
+          conversation.unreadCount += 1;
+          conversation.lastMessageTime = { ...s.gameTime };
+
+          // Add notification
+          s.phone.notifications.push({
+            id: generateId(),
+            type: 'message',
+            title: npc.name,
+            body: content.substring(0, 50) + (content.length > 50 ? '...' : ''),
+            timestamp: { ...s.gameTime },
+            read: false,
+            sourceNpcId: npc.id,
+            urgent: false,
+          });
+        });
       },
 
       // ===== LOCATION ACTIONS =====

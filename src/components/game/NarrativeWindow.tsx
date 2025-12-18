@@ -40,6 +40,7 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
     updatePlayer,
     updateNPCRelationship,
     addNPCMemory,
+    addKnownFact,
     getNPCsAtLocation,
   } = useGameStore();
 
@@ -224,6 +225,30 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
     if (Object.keys(result.relationshipChanges).length > 0) {
       updateNPCRelationship(activeNPC.id, result.relationshipChanges);
     }
+
+    // Add memory of this conversation to NPC
+    const emotionImpactMap: Record<string, number> = {
+      happy: 60, excited: 70, flirty: 50, content: 30,
+      sad: -40, frustrated: -50, angry: -70, anxious: -30,
+      bored: -10, lonely: -20, embarrassed: 10, jealous: -40,
+      grateful: 50, nostalgic: 20, hopeful: 40, confused: 0,
+    };
+    const emotionalImpact = emotionImpactMap[result.detectedEmotion] || 0;
+    const significance: 'forgettable' | 'notable' | 'important' | 'pivotal' | 'defining' =
+      Math.abs(emotionalImpact) > 60 ? 'important' :
+      Math.abs(emotionalImpact) > 30 ? 'notable' : 'forgettable';
+
+    addNPCMemory(activeNPC.id, {
+      description: `Had a conversation with ${player.name} at ${currentLocation?.name || 'unknown location'}: "${playerMessage.slice(0, 50)}${playerMessage.length > 50 ? '...' : ''}"`,
+      day: gameTime.day,
+      emotionalImpact,
+      significance,
+      tags: ['in_person', 'conversation', result.detectedEmotion],
+      referenceWeight: 60,
+      timesReferenced: 0,
+      involvedNPCs: [],
+      locationId: currentLocation?.id,
+    });
 
     // Update choices for conversation
     setCurrentChoices([
