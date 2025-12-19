@@ -215,6 +215,7 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
           { description: 'Complete major project', met: false },
           { description: 'Performance rating 85%+', met: false },
         ],
+        workProjects: [],
       },
     });
 

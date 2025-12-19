@@ -1,20 +1,40 @@
-import OpenAI from 'openai';
 import type { NPC, Player, GameTime, DialogueReaction, EmotionType } from '@/types';
 
-// DeepSeek API client
-const getDeepSeekClient = () => {
-  const apiKey = process.env.NEXT_PUBLIC_DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY || 'sk-6d5d51862c5c4f89b95b9569127a9d9f';
+// Call server-side API route to avoid CORS issues
+const callDeepSeekAPI = async (
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  temperature: number = 0.9,
+  max_tokens: number = 350,
+  presence_penalty: number = 0.4,
+  frequency_penalty: number = 0.4
+): Promise<string | null> => {
+  try {
+    const response = await fetch('/api/npc-chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages,
+        temperature,
+        max_tokens,
+        presence_penalty,
+        frequency_penalty,
+      }),
+    });
 
-  if (!apiKey) {
-    console.warn('DEEPSEEK_API_KEY not set. AI dialogue will use fallback responses.');
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('NPC chat API error:', error);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.response || null;
+  } catch (error) {
+    console.error('Failed to call NPC chat API:', error);
     return null;
   }
-
-  return new OpenAI({
-    apiKey,
-    baseURL: 'https://api.deepseek.com/v1',
-    dangerouslyAllowBrowser: true, // For client-side usage
-  });
 };
 
 // Build the system prompt for an NPC
@@ -362,8 +382,6 @@ export async function generateNPCResponse(
   relationshipChanges: Partial<typeof npc.relationship>;
   detectedEmotion: EmotionType;
 }> {
-  const client = getDeepSeekClient();
-
   // Analyze the player's message
   const analysis = analyzeMessageImpact(playerMessage, npc, player);
   const microExpression = generateMicroExpression(analysis, npc);
@@ -394,23 +412,11 @@ export async function generateNPCResponse(
   // Try to get AI response
   let response: string;
 
-  if (client) {
-    try {
-      const completion = await client.chat.completions.create({
-        model: 'deepseek-chat',
-        messages,
-        temperature: 0.9,
-        max_tokens: 350,
-        presence_penalty: 0.4,
-        frequency_penalty: 0.4,
-      });
-
-      response = completion.choices[0]?.message?.content || getFallbackResponse(npc, player, analysis);
-    } catch (error) {
-      console.error('DeepSeek API error:', error);
-      response = getFallbackResponse(npc, player, analysis);
-    }
-  } else {
+  try {
+    const aiResponse = await callDeepSeekAPI(messages, 0.9, 350, 0.4, 0.4);
+    response = aiResponse || getFallbackResponse(npc, player, analysis);
+  } catch (error) {
+    console.error('DeepSeek API error:', error);
     response = getFallbackResponse(npc, player, analysis);
   }
 

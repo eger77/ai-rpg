@@ -1,20 +1,36 @@
-import OpenAI from 'openai';
-import type { Player, NPC, Location, GameTime, WorldSettings } from '@/types';
+import type { Player, NPC, Location, GameTime, WorldSettings, LocationType } from '@/types';
 
-// DeepSeek API client
-const getDeepSeekClient = () => {
-  const apiKey = process.env.NEXT_PUBLIC_DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY || 'sk-6d5d51862c5c4f89b95b9569127a9d9f';
+// Call server-side API route to avoid CORS issues
+const callDeepSeekAPI = async (
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  temperature: number = 0.9,
+  max_tokens: number = 400
+): Promise<string | null> => {
+  try {
+    const response = await fetch('/api/narrative', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages,
+        temperature,
+        max_tokens,
+      }),
+    });
 
-  if (!apiKey) {
-    console.warn('DEEPSEEK_API_KEY not set. Narrative will use fallback responses.');
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('Narrative API error:', error);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.response || null;
+  } catch (error) {
+    console.error('Failed to call narrative API:', error);
     return null;
   }
-
-  return new OpenAI({
-    apiKey,
-    baseURL: 'https://api.deepseek.com/v1',
-    dangerouslyAllowBrowser: true,
-  });
 };
 
 export interface NarrativeContext {
@@ -170,8 +186,6 @@ export async function generateNarrative(
   moodShift: 'positive' | 'negative' | 'neutral';
   suggestedTimeAdvance: number;
 }> {
-  const client = getDeepSeekClient();
-
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: buildNarrativeSystemPrompt(context) },
   ];
@@ -188,50 +202,41 @@ export async function generateNarrative(
 
   messages.push({ role: 'user', content: playerInput });
 
-  if (client) {
-    try {
-      const completion = await client.chat.completions.create({
-        model: 'deepseek-chat',
-        messages,
-        temperature: 0.9,
-        max_tokens: 400,
-      });
+  try {
+    const responseText = await callDeepSeekAPI(messages, 0.9, 400);
 
-      const responseText = completion.choices[0]?.message?.content?.trim() || '';
+    if (responseText && responseText.length > 10) {
+      // Extract NPC dialogue if present (formatted as *action* "dialogue")
+      let npcDialogue: { name: string; text: string; action?: string } | undefined;
+      const dialogueMatch = responseText.match(/\*([^*]+)\*\s*"([^"]+)"/);
 
-      if (responseText && responseText.length > 10) {
-        // Extract NPC dialogue if present (formatted as *action* "dialogue")
-        let npcDialogue: { name: string; text: string; action?: string } | undefined;
-        const dialogueMatch = responseText.match(/\*([^*]+)\*\s*"([^"]+)"/);
-
-        if (dialogueMatch && context.npcsPresent.length > 0) {
-          npcDialogue = {
-            name: context.npcsPresent[0].name,
-            text: dialogueMatch[2],
-            action: dialogueMatch[1],
-          };
-        }
-
-        // Determine mood shift based on content
-        const lowerText = responseText.toLowerCase();
-        let moodShift: 'positive' | 'negative' | 'neutral' = 'neutral';
-        const positiveWords = ['smile', 'laugh', 'happy', 'warm', 'love', 'joy', 'excited', 'wonderful', 'beautiful'];
-        const negativeWords = ['frown', 'sad', 'angry', 'upset', 'hurt', 'pain', 'terrible', 'awful', 'annoyed'];
-
-        if (positiveWords.some(w => lowerText.includes(w))) moodShift = 'positive';
-        else if (negativeWords.some(w => lowerText.includes(w))) moodShift = 'negative';
-
-        return {
-          narration: responseText,
-          npcDialogue,
-          choices: generateDefaultChoices(context),
-          moodShift,
-          suggestedTimeAdvance: 5,
+      if (dialogueMatch && context.npcsPresent.length > 0) {
+        npcDialogue = {
+          name: context.npcsPresent[0].name,
+          text: dialogueMatch[2],
+          action: dialogueMatch[1],
         };
       }
-    } catch (error) {
-      console.error('Narrative generation error:', error);
+
+      // Determine mood shift based on content
+      const lowerText = responseText.toLowerCase();
+      let moodShift: 'positive' | 'negative' | 'neutral' = 'neutral';
+      const positiveWords = ['smile', 'laugh', 'happy', 'warm', 'love', 'joy', 'excited', 'wonderful', 'beautiful'];
+      const negativeWords = ['frown', 'sad', 'angry', 'upset', 'hurt', 'pain', 'terrible', 'awful', 'annoyed'];
+
+      if (positiveWords.some(w => lowerText.includes(w))) moodShift = 'positive';
+      else if (negativeWords.some(w => lowerText.includes(w))) moodShift = 'negative';
+
+      return {
+        narration: responseText,
+        npcDialogue,
+        choices: generateDefaultChoices(context),
+        moodShift,
+        suggestedTimeAdvance: 5,
+      };
     }
+  } catch (error) {
+    console.error('Narrative generation error:', error);
   }
 
   return getFallbackNarrative(context, playerInput);
@@ -239,8 +244,6 @@ export async function generateNarrative(
 
 // Generate scene opening narration
 export async function generateSceneOpening(context: NarrativeContext): Promise<string> {
-  const client = getDeepSeekClient();
-
   const prompt = `You are narrating an adult romance simulation. The player just arrived at ${context.currentLocation.name}.
 
 Write a vivid, sensual 2-3 sentence description of their arrival in second person present tense.
@@ -253,25 +256,18 @@ ${context.npcsPresent.length > 0 ? `- People here: ${context.npcsPresent.map(n =
 
 Include sensory details (sights, sounds, scents, atmosphere). If people are present, note their appearance and what catches your eye about them.`;
 
-  if (client) {
-    try {
-      const completion = await client.chat.completions.create({
-        model: 'deepseek-chat',
-        messages: [
-          { role: 'system', content: 'You are a talented narrative writer for an immersive adult romance simulation. Write vivid, sensual, atmospheric descriptions in second person present tense. Include physical details and chemistry when appropriate.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.9,
-        max_tokens: 250,
-      });
+  try {
+    const messages = [
+      { role: 'system' as const, content: 'You are a talented narrative writer for an immersive adult romance simulation. Write vivid, sensual, atmospheric descriptions in second person present tense. Include physical details and chemistry when appropriate.' },
+      { role: 'user' as const, content: prompt },
+    ];
 
-      const result = completion.choices[0]?.message?.content?.trim();
-      if (result && result.length > 10) {
-        return result;
-      }
-    } catch (error) {
-      console.error('Scene opening generation error:', error);
+    const result = await callDeepSeekAPI(messages, 0.9, 250);
+    if (result && result.length > 10) {
+      return result;
     }
+  } catch (error) {
+    console.error('Scene opening generation error:', error);
   }
 
   return getFallbackSceneOpening(context);
@@ -376,7 +372,8 @@ function getFallbackNarrative(
     } else {
       // Default: add context based on location and time
       const timeOfDay = gameTime.hour < 12 ? 'morning' : gameTime.hour < 17 ? 'afternoon' : gameTime.hour < 21 ? 'evening' : 'night';
-      narration = `${currentLocation.ambiance} It's ${timeOfDay}, and ${currentLocation.name} has a ${currentLocation.type === 'home' ? 'familiar' : currentLocation.type === 'commercial' ? 'bustling' : 'distinct'} atmosphere.`;
+      const commercialTypes: LocationType[] = ['cafe', 'restaurant', 'bar', 'club', 'shop', 'gallery', 'theater'];
+      narration = `${currentLocation.ambiance} It's ${timeOfDay}, and ${currentLocation.name} has a ${currentLocation.type === 'home' ? 'familiar' : commercialTypes.includes(currentLocation.type) ? 'bustling' : 'distinct'} atmosphere.`;
 
       if (npcsPresent.length > 0) {
         narration += ` ${npcsPresent[0].name} is here, ${npcsPresent[0].currentState.currentActivity}.`;
