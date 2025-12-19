@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { persist } from 'zustand/middleware';
-import { enableMapSet } from 'immer';
+import { enableMapSet, current } from 'immer';
 import type {
   GameTime,
   Player,
@@ -1351,13 +1351,13 @@ export const useGameStore = create<GameStore>()(
         initialized: state.initialized,
         gameTime: state.gameTime,
         player: state.player,
-        npcs: Object.fromEntries(state.npcs),
-        locations: Object.fromEntries(state.locations),
-        quests: Object.fromEntries(state.quests),
+        npcs: Object.fromEntries(Array.from(state.npcs)),
+        locations: Object.fromEntries(Array.from(state.locations)),
+        quests: Object.fromEntries(Array.from(state.quests)),
         events: state.events,
         phone: state.phone,
         globalFlags: state.globalFlags,
-        worldWiki: Object.fromEntries(state.worldWiki),
+        worldWiki: Object.fromEntries(Array.from(state.worldWiki)),
         totalPlayTime: state.totalPlayTime,
         worldSettings: state.worldSettings,
         emailState: state.emailState,
