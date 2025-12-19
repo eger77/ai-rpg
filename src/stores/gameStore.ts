@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { persist } from 'zustand/middleware';
+import { enableMapSet, current } from 'immer';
 import type {
   GameTime,
   Player,
@@ -21,6 +22,11 @@ import type {
   Email,
   EmailState,
 } from '@/types';
+import { autonomousNPC } from '@/systems/autonomousNPC';
+import { financialManager } from '@/systems/financialManager';
+
+// Enable Immer's MapSet plugin for Map/Set support
+enableMapSet();
 
 // =====================================================
 // GAME STATE INTERFACE
@@ -106,6 +112,7 @@ interface GameActions {
   updateLocation: (locationId: string, updates: Partial<Location>) => void;
   unlockLocation: (locationId: string) => void;
   getLocation: (locationId: string) => Location | undefined;
+  checkLocationAccess: (locationId: string) => { allowed: boolean; reason?: string; suggestions?: string[] };
 
   // Quest Actions
   addQuest: (quest: Quest) => void;
@@ -152,6 +159,8 @@ interface GameActions {
   getTimeOfDay: () => TimeOfDay;
   isLocationOpen: (locationId: string) => boolean;
   canAfford: (amount: number) => boolean;
+  getLocationsCount: () => number;
+  getNPCsCount: () => number;
 }
 
 type GameStore = GameState & GameActions;
@@ -417,12 +426,47 @@ export const useGameStore = create<GameStore>()(
         try {
           const parsed = JSON.parse(saveData);
           set((state) => {
-            Object.assign(state, parsed);
+            // Manually assign each property to avoid Immer issues
+            state.initialized = parsed.initialized ?? false;
+            state.paused = parsed.paused ?? false;
+            state.gameSpeed = parsed.gameSpeed ?? 1;
+            state.gameTime = parsed.gameTime;
+            state.realTimeRatio = parsed.realTimeRatio ?? 1;
+            state.worldSettings = parsed.worldSettings ?? null;
+            state.player = parsed.player ?? null;
+            state.events = parsed.events ?? [];
+            state.phone = parsed.phone ?? null;
+            state.emailState = parsed.emailState ?? null;
+            state.dialogue = parsed.dialogue ?? null;
+            state.globalFlags = parsed.globalFlags ?? {};
+            state.eventQueue = parsed.eventQueue ?? [];
+            state.totalPlayTime = parsed.totalPlayTime ?? 0;
+
             // Convert Maps back from objects
-            state.npcs = new Map(Object.entries(parsed.npcs || {}));
-            state.locations = new Map(Object.entries(parsed.locations || {}));
-            state.quests = new Map(Object.entries(parsed.quests || {}));
-            state.worldWiki = new Map(Object.entries(parsed.worldWiki || {}));
+            state.npcs.clear();
+            if (parsed.npcs) {
+              Object.entries(parsed.npcs).forEach(([key, value]) => {
+                state.npcs.set(key, value as NPC);
+              });
+            }
+            state.locations.clear();
+            if (parsed.locations) {
+              Object.entries(parsed.locations).forEach(([key, value]) => {
+                state.locations.set(key, value as Location);
+              });
+            }
+            state.quests.clear();
+            if (parsed.quests) {
+              Object.entries(parsed.quests).forEach(([key, value]) => {
+                state.quests.set(key, value as Quest);
+              });
+            }
+            state.worldWiki.clear();
+            if (parsed.worldWiki) {
+              Object.entries(parsed.worldWiki).forEach(([key, value]) => {
+                state.worldWiki.set(key, value as any);
+              });
+            }
           });
         } catch (e) {
           console.error('Failed to load game:', e);
@@ -442,7 +486,33 @@ export const useGameStore = create<GameStore>()(
       },
 
       resetGame: () => {
-        set(initialState);
+        set((state) => {
+          state.initialized = false;
+          state.paused = false;
+          state.gameSpeed = 1;
+          state.gameTime = {
+            day: 1,
+            hour: 8,
+            minute: 0,
+            dayOfWeek: 'monday',
+            season: 'spring',
+            weather: 'sunny',
+          };
+          state.realTimeRatio = 1;
+          state.worldSettings = null;
+          state.player = null;
+          state.npcs = new Map();
+          state.locations = new Map();
+          state.quests = new Map();
+          state.events = [];
+          state.phone = null;
+          state.emailState = null;
+          state.dialogue = null;
+          state.globalFlags = {};
+          state.worldWiki = new Map();
+          state.eventQueue = [];
+          state.totalPlayTime = 0;
+        });
       },
 
       // ===== TIME MANAGEMENT =====
@@ -483,45 +553,150 @@ export const useGameStore = create<GameStore>()(
             state.player.hygiene = Math.max(0, state.player.hygiene - minutes * 0.02);
           }
 
-          // Update NPC states
-          state.npcs.forEach((npc, id) => {
-            // Update location based on schedule
-            const currentSchedule = npc.defaultSchedule.find((s) => {
-              const matchesDay =
-                s.dayOfWeek === 'all' ||
-                s.dayOfWeek === state.gameTime.dayOfWeek ||
-                (s.dayOfWeek === 'weekday' && !['saturday', 'sunday'].includes(state.gameTime.dayOfWeek)) ||
-                (s.dayOfWeek === 'weekend' && ['saturday', 'sunday'].includes(state.gameTime.dayOfWeek));
+          // Update NPC states using autonomous engine
+          Array.from(state.npcs.keys()).forEach((id) => {
+            const npc = state.npcs.get(id);
+            if (!npc || !state.player) return;
 
-              return matchesDay && newHour >= s.startHour && newHour < s.endHour;
-            });
-
-            if (currentSchedule) {
-              state.npcs.set(id, {
-                ...npc,
-                currentState: {
-                  ...npc.currentState,
-                  currentLocationId: currentSchedule.locationId,
-                  currentActivity: currentSchedule.activity,
-                  availability: currentSchedule.interruptible ? 'available' : 'busy',
-                },
-              });
-            }
+            // Simulate NPC's day - updates location, mood, energy, availability
+            const updates = autonomousNPC.simulateNPCDay(npc, state.gameTime);
+            Object.assign(npc, updates);
 
             // Decay relationship if neglected
-            const relationship = npc.relationship;
-            if (relationship.daysSinceContact > 3) {
-              state.npcs.set(id, {
-                ...npc,
-                relationship: {
-                  ...relationship,
-                  friendship: Math.max(0, relationship.friendship - 0.5),
-                  romance: Math.max(0, relationship.romance - 1),
-                  neglectWarning: relationship.daysSinceContact > 5,
-                },
-              });
+            if (npc.relationship.daysSinceContact > 3) {
+              npc.relationship.friendship = Math.max(0, npc.relationship.friendship - 0.5);
+              npc.relationship.romance = Math.max(0, npc.relationship.romance - 1);
+              npc.relationship.neglectWarning = npc.relationship.daysSinceContact > 5;
+            }
+
+            // Increment daysSinceContact (reset when player messages them)
+            npc.relationship.daysSinceContact += minutes / (24 * 60);
+
+            // Random life events
+            if (Math.random() < 0.05) {
+              const lifeEvent = autonomousNPC.generateLifeEvent(npc, state.gameTime);
+              if (lifeEvent) {
+                // Store the life event in NPC's memory
+                npc.memories.push({
+                  id: generateId(),
+                  description: lifeEvent.description,
+                  day: state.gameTime.day,
+                  emotionalImpact: lifeEvent.type.includes('success') ? 20 : lifeEvent.type.includes('stress') || lifeEvent.type.includes('sick') ? -20 : 0,
+                  significance: lifeEvent.type.includes('success') || lifeEvent.type.includes('excited') ? 'notable' : 'forgettable',
+                  tags: [lifeEvent.type, 'autonomous_event'],
+                  referenceWeight: 1,
+                  timesReferenced: 0,
+                  involvedNPCs: [],
+                });
+              }
             }
           });
+
+          // Financial processing - check if a new day has started
+          const previousDay = state.gameTime.day - (newDay - state.gameTime.day);
+          const dayChanged = newDay !== previousDay;
+
+          if (dayChanged && state.player && state.phone) {
+            // Process bills that are due today
+            const billResults = financialManager.processDueBills(state.player, state.gameTime);
+
+            billResults.forEach((result) => {
+              // Add transaction record
+              state.player!.finances.transactions.push({
+                id: generateId(),
+                amount: -result.amount,
+                category: 'utilities',
+                description: `${result.billName} - Auto-pay`,
+                timestamp: { ...state.gameTime },
+              });
+
+              // Add notification for bill payment
+              state.phone!.notifications.push({
+                id: generateId(),
+                type: 'system',
+                title: result.overdraft ? '⚠️ Bill Paid - Overdraft' : '✓ Bill Paid',
+                body: result.overdraft
+                  ? `${result.billName}: $${result.amount} + $${result.overdraftFee} overdraft fee. Balance: $${result.newBalance.toFixed(2)}`
+                  : `${result.billName}: $${result.amount}. Balance: $${result.newBalance.toFixed(2)}`,
+                timestamp: { ...state.gameTime },
+                read: false,
+                urgent: result.overdraft,
+              });
+
+              // If overdraft, add email warning
+              if (result.overdraft) {
+                state.phone!.emails.push({
+                  id: generateId(),
+                  from: 'First National Bank',
+                  fromAddress: 'alerts@firstnational.com',
+                  subject: 'Overdraft Notice - Account Alert',
+                  body: `Dear ${state.player!.name},\n\nYour account has been overdrawn. A payment of $${result.amount} for "${result.billName}" was processed, but your account balance was insufficient.\n\nOverdraft fee: $${result.overdraftFee}\nCurrent balance: $${result.newBalance.toFixed(2)}\n\nPlease deposit funds to bring your account back to positive balance.\n\nThank you,\nFirst National Bank`,
+                  timestamp: { ...state.gameTime },
+                  read: false,
+                  starred: false,
+                  folder: 'inbox',
+                });
+              }
+            });
+
+            // Process paycheck if it's payday
+            const paycheckResult = financialManager.processPaycheck(state.player, state.gameTime);
+            if (paycheckResult && paycheckResult.received) {
+              // Add transaction record
+              state.player.finances.transactions.push({
+                id: generateId(),
+                amount: paycheckResult.amount,
+                category: 'salary',
+                description: `${state.player.career.companyName} - Paycheck`,
+                timestamp: { ...state.gameTime },
+              });
+
+              // Add notification
+              state.phone.notifications.push({
+                id: generateId(),
+                type: 'system',
+                title: '💰 Paycheck Deposited',
+                body: `$${paycheckResult.amount.toFixed(2)} from ${state.player.career.companyName}. New balance: $${state.player.finances.balance.toFixed(2)}`,
+                timestamp: { ...state.gameTime },
+                read: false,
+                urgent: false,
+              });
+            }
+
+            // Reset monthly bills on day 1 of each month
+            if (newDay % 30 === 1) {
+              financialManager.resetMonthlyBills(state.player);
+            }
+
+            // Quarterly performance review and potential raise (every 90 days)
+            if (newDay % 90 === 0 && state.player.career.employed) {
+              const raiseResult = financialManager.checkForRaise(state.player, state.gameTime);
+              if (raiseResult.raised) {
+                state.phone.notifications.push({
+                  id: generateId(),
+                  type: 'system',
+                  title: '🎉 Salary Increase!',
+                  body: `Congratulations! Your salary has been increased to $${raiseResult.newSalary}. ${raiseResult.reason}`,
+                  timestamp: { ...state.gameTime },
+                  read: false,
+                  urgent: false,
+                });
+
+                // Add email from boss
+                state.phone.emails.push({
+                  id: generateId(),
+                  from: state.player.career.companyName,
+                  fromAddress: 'hr@company.com',
+                  subject: 'Performance Review - Salary Adjustment',
+                  body: `Dear ${state.player.name},\n\nFollowing your recent performance review, we are pleased to inform you that your annual salary has been adjusted to $${raiseResult.newSalary}.\n\n${raiseResult.reason}\n\nKeep up the excellent work!\n\nBest regards,\nHuman Resources`,
+                  timestamp: { ...state.gameTime },
+                  read: false,
+                  starred: false,
+                  folder: 'inbox',
+                });
+              }
+            }
+          }
 
           state.totalPlayTime += minutes;
         });
@@ -666,7 +841,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const npc = state.npcs.get(npcId);
           if (npc) {
-            state.npcs.set(npcId, { ...npc, ...updates });
+            Object.assign(npc, updates);
           }
         });
       },
@@ -675,10 +850,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const npc = state.npcs.get(npcId);
           if (npc) {
-            state.npcs.set(npcId, {
-              ...npc,
-              relationship: { ...npc.relationship, ...updates },
-            });
+            Object.assign(npc.relationship, updates);
           }
         });
       },
@@ -688,10 +860,7 @@ export const useGameStore = create<GameStore>()(
           const npc = state.npcs.get(npcId);
           if (npc) {
             const newMemory = { ...memory, id: generateId() };
-            state.npcs.set(npcId, {
-              ...npc,
-              memories: [...npc.memories, newMemory],
-            });
+            npc.memories.push(newMemory);
           }
         });
       },
@@ -700,10 +869,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const npc = state.npcs.get(npcId);
           if (npc) {
-            state.npcs.set(npcId, {
-              ...npc,
-              appearance: { ...npc.appearance, portraitUrl },
-            });
+            npc.appearance.portraitUrl = portraitUrl;
           }
         });
       },
@@ -720,10 +886,7 @@ export const useGameStore = create<GameStore>()(
               importance: 'minor' as const,
               canReference,
             };
-            state.npcs.set(npcId, {
-              ...npc,
-              knownFacts: [...npc.knownFacts, newFact],
-            });
+            npc.knownFacts.push(newFact);
           }
         });
       },
@@ -734,7 +897,7 @@ export const useGameStore = create<GameStore>()(
 
       getNPCsAtLocation: (locationId) => {
         const npcs: NPC[] = [];
-        get().npcs.forEach((npc) => {
+        Array.from(get().npcs.values()).forEach((npc) => {
           if (npc.currentState.currentLocationId === locationId) {
             npcs.push(npc);
           }
@@ -748,7 +911,7 @@ export const useGameStore = create<GameStore>()(
 
         // Get NPCs the player knows (has had contact with)
         const knownNPCs: NPC[] = [];
-        state.npcs.forEach((npc) => {
+        Array.from(state.npcs.values()).forEach((npc) => {
           if (npc.relationship.totalInteractions > 0 || npc.relationship.friendship > 10) {
             knownNPCs.push(npc);
           }
@@ -756,83 +919,66 @@ export const useGameStore = create<GameStore>()(
 
         if (knownNPCs.length === 0) return;
 
-        // Random chance for NPC to message (higher relationship = higher chance)
-        const npc = knownNPCs[Math.floor(Math.random() * knownNPCs.length)];
-        const messageProbability = Math.min(0.3, (npc.relationship.friendship + npc.relationship.romance) / 500);
+        // Check each NPC to see if they should proactively text
+        knownNPCs.forEach((npc) => {
+          if (autonomousNPC.shouldNPCTextPlayer(npc, state.player!, state.gameTime)) {
+            // Generate contextual message using autonomous engine
+            const content = autonomousNPC.generateProactiveMessage(npc, state.player!, state.gameTime);
 
-        if (Math.random() > messageProbability) return;
+            // Send the message
+            set((s) => {
+              if (!s.phone) return;
 
-        // Generate a contextual message based on relationship
-        const greetings = [
-          `Hey ${state.player.name}! How's it going?`,
-          `Was just thinking about you. What are you up to?`,
-          `Hey! Got a sec to chat?`,
-          `Hope you're having a good day!`,
-        ];
-        const friendlyMessages = [
-          `Wanna hang out sometime?`,
-          `Did you see that thing on the news?`,
-          `Coffee later?`,
-          `Miss our chats! Let's catch up soon`,
-        ];
-        const romanticMessages = [
-          `Can't stop thinking about our last conversation...`,
-          `When can I see you again?`,
-          `You make me smile 😊`,
-          `Are you free this weekend?`,
-        ];
+              let conversation = s.phone.conversations.find((c) => c.npcId === npc.id);
+              if (!conversation) {
+                conversation = {
+                  id: generateId(),
+                  npcId: npc.id,
+                  messages: [],
+                  unreadCount: 0,
+                  lastMessageTime: { ...s.gameTime },
+                  typing: false,
+                  readReceipts: true,
+                };
+                s.phone.conversations.push(conversation);
 
-        let messages = greetings;
-        if (npc.relationship.friendship > 40) {
-          messages = [...messages, ...friendlyMessages];
-        }
-        if (npc.relationship.romance > 30) {
-          messages = [...messages, ...romanticMessages];
-        }
+                // Ensure contact exists
+                const contactExists = s.phone.contacts.some((c) => c.npcId === npc.id);
+                if (!contactExists) {
+                  s.phone.contacts.push({
+                    id: generateId(),
+                    npcId: npc.id,
+                    blocked: false,
+                    favorite: false,
+                  });
+                }
+              }
 
-        const content = messages[Math.floor(Math.random() * messages.length)];
+              const newMessage: Message = {
+                id: generateId(),
+                senderId: npc.id,
+                content,
+                timestamp: { ...s.gameTime },
+                read: false,
+                delivered: true,
+              };
+              conversation.messages.push(newMessage);
+              conversation.unreadCount += 1;
+              conversation.lastMessageTime = { ...s.gameTime };
 
-        // Check if conversation exists, create if not
-        set((s) => {
-          if (!s.phone) return;
-
-          let conversation = s.phone.conversations.find((c) => c.npcId === npc.id);
-          if (!conversation) {
-            conversation = {
-              id: generateId(),
-              npcId: npc.id,
-              messages: [],
-              unreadCount: 0,
-              lastMessageTime: { ...s.gameTime },
-              typing: false,
-              readReceipts: true,
-            };
-            s.phone.conversations.push(conversation);
+              // Add notification
+              s.phone.notifications.push({
+                id: generateId(),
+                type: 'message',
+                title: npc.name,
+                body: content.substring(0, 50) + (content.length > 50 ? '...' : ''),
+                timestamp: { ...s.gameTime },
+                read: false,
+                sourceNpcId: npc.id,
+                urgent: false,
+              });
+            });
           }
-
-          const newMessage: Message = {
-            id: generateId(),
-            senderId: npc.id,
-            content,
-            timestamp: { ...s.gameTime },
-            read: false,
-            delivered: true,
-          };
-          conversation.messages.push(newMessage);
-          conversation.unreadCount += 1;
-          conversation.lastMessageTime = { ...s.gameTime };
-
-          // Add notification
-          s.phone.notifications.push({
-            id: generateId(),
-            type: 'message',
-            title: npc.name,
-            body: content.substring(0, 50) + (content.length > 50 ? '...' : ''),
-            timestamp: { ...s.gameTime },
-            read: false,
-            sourceNpcId: npc.id,
-            urgent: false,
-          });
         });
       },
 
@@ -848,7 +994,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const location = state.locations.get(locationId);
           if (location) {
-            state.locations.set(locationId, { ...location, ...updates });
+            Object.assign(location, updates);
           }
         });
       },
@@ -857,7 +1003,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const location = state.locations.get(locationId);
           if (location) {
-            state.locations.set(locationId, { ...location, unlocked: true });
+            location.unlocked = true;
           }
           if (state.player && !state.player.unlockedLocations.includes(locationId)) {
             state.player.unlockedLocations.push(locationId);
@@ -867,6 +1013,119 @@ export const useGameStore = create<GameStore>()(
 
       getLocation: (locationId) => {
         return get().locations.get(locationId);
+      },
+
+      checkLocationAccess: (locationId) => {
+        const state = get();
+        const location = state.locations.get(locationId);
+        const player = state.player;
+
+        if (!location || !player) {
+          return { allowed: false, reason: 'Location or player not found' };
+        }
+
+        // Check if location is unlocked
+        if (!location.unlocked && !player.unlockedLocations.includes(locationId)) {
+          return { allowed: false, reason: 'This location is locked' };
+        }
+
+        // Check if location is open (time-based)
+        if (location.openHours !== 'always') {
+          const hour = state.gameTime.hour;
+          if (hour < location.openHours.open || hour >= location.openHours.close) {
+            return {
+              allowed: false,
+              reason: `This location is closed. Hours: ${location.openHours.open}:00 - ${location.openHours.close}:00`,
+            };
+          }
+        }
+
+        // Check if location is closed on this day
+        if (location.closedDays.includes(state.gameTime.dayOfWeek)) {
+          return {
+            allowed: false,
+            reason: `This location is closed on ${state.gameTime.dayOfWeek}s`,
+          };
+        }
+
+        // Check dress code / formality level
+        if (location.minFormalityLevel) {
+          let totalFormality = 0;
+          let itemCount = 0;
+
+          const outfit = player.currentOutfit;
+
+          if (outfit.hat) {
+            totalFormality += outfit.hat.formalityLevel;
+            itemCount++;
+          }
+          if (outfit.top) {
+            totalFormality += outfit.top.formalityLevel;
+            itemCount++;
+          }
+          if (outfit.bottom) {
+            totalFormality += outfit.bottom.formalityLevel;
+            itemCount++;
+          }
+          if (outfit.shoes) {
+            totalFormality += outfit.shoes.formalityLevel;
+            itemCount++;
+          }
+          if (outfit.outerwear) {
+            totalFormality += outfit.outerwear.formalityLevel;
+            itemCount++;
+          }
+          if (outfit.accessory1) {
+            totalFormality += outfit.accessory1.formalityLevel;
+            itemCount++;
+          }
+          if (outfit.accessory2) {
+            totalFormality += outfit.accessory2.formalityLevel;
+            itemCount++;
+          }
+
+          const avgFormality = itemCount > 0 ? Math.round(totalFormality / itemCount) : 0;
+
+          if (avgFormality < location.minFormalityLevel) {
+            const suggestions: string[] = [];
+            const diff = location.minFormalityLevel - avgFormality;
+
+            suggestions.push(
+              `Your outfit is not formal enough. You need ${diff} more formality points.`
+            );
+
+            if (location.minFormalityLevel >= 8) {
+              suggestions.push('Try wearing: Suit, blazer, or formal dress');
+              suggestions.push('Dress pants or formal skirt');
+              suggestions.push('Polished dress shoes');
+            } else if (location.minFormalityLevel >= 6) {
+              suggestions.push('Try wearing: Button-up shirt or professional blouse');
+              suggestions.push('Slacks or professional skirt');
+              suggestions.push('Dress shoes');
+            } else if (location.minFormalityLevel >= 4) {
+              suggestions.push('Try wearing: Collared shirt or nice blouse');
+              suggestions.push('Chinos or dress pants');
+              suggestions.push('Loafers or dress shoes');
+            }
+
+            return {
+              allowed: false,
+              reason: `Dress code violation: This venue requires more formal attire (formality ${location.minFormalityLevel}/10)`,
+              suggestions,
+            };
+          }
+        }
+
+        // Check admission cost
+        if (location.admissionCost && player.finances.balance < location.admissionCost) {
+          return {
+            allowed: false,
+            reason: `Insufficient funds. Admission costs $${location.admissionCost}`,
+          };
+        }
+
+        // All checks passed
+        return { allowed: true };
       },
 
       // ===== QUEST ACTIONS =====
@@ -881,7 +1140,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const quest = state.quests.get(questId);
           if (quest) {
-            state.quests.set(questId, { ...quest, ...updates });
+            Object.assign(quest, updates);
           }
         });
       },
@@ -890,16 +1149,15 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const quest = state.quests.get(questId);
           if (quest) {
-            const updatedObjectives = quest.objectives.map((obj) =>
-              obj.id === objectiveId ? { ...obj, completed: true } : obj
-            );
-            const allComplete = updatedObjectives.every((obj) => obj.completed);
-            state.quests.set(questId, {
-              ...quest,
-              objectives: updatedObjectives,
-              status: allComplete ? 'completed' : quest.status,
-              completedOnDay: allComplete ? state.gameTime.day : undefined,
-            });
+            const objective = quest.objectives.find((obj) => obj.id === objectiveId);
+            if (objective) {
+              objective.completed = true;
+            }
+            const allComplete = quest.objectives.every((obj) => obj.completed);
+            if (allComplete) {
+              quest.status = 'completed';
+              quest.completedOnDay = state.gameTime.day;
+            }
           }
         });
       },
@@ -908,7 +1166,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const quest = state.quests.get(questId);
           if (quest) {
-            state.quests.set(questId, { ...quest, status: 'failed' });
+            quest.status = 'failed';
           }
         });
       },
@@ -960,13 +1218,12 @@ export const useGameStore = create<GameStore>()(
             }
           }
 
-          // Reset days since contact
+          // Reset days since contact and increment totalInteractions
           const npc = state.npcs.get(npcId);
           if (npc) {
-            state.npcs.set(npcId, {
-              ...npc,
-              relationship: { ...npc.relationship, daysSinceContact: 0, neglectWarning: false },
-            });
+            npc.relationship.daysSinceContact = 0;
+            npc.relationship.neglectWarning = false;
+            npc.relationship.totalInteractions += 1;
           }
         });
       },
@@ -1057,6 +1314,17 @@ export const useGameStore = create<GameStore>()(
       sendTextMessage: (npcId, content) => {
         set((state) => {
           if (state.phone) {
+            // Ensure NPC is in contacts - add them if they're not
+            const contactExists = state.phone.contacts.some((c) => c.npcId === npcId);
+            if (!contactExists) {
+              state.phone.contacts.push({
+                id: generateId(),
+                npcId,
+                blocked: false,
+                favorite: false,
+              });
+            }
+
             let conversation = state.phone.conversations.find((c) => c.npcId === npcId);
             if (!conversation) {
               // Create new conversation if it doesn't exist
@@ -1084,13 +1352,12 @@ export const useGameStore = create<GameStore>()(
             conversation.lastMessageTime = { ...state.gameTime };
           }
 
-          // Reset days since contact
+          // Reset days since contact and increment totalInteractions
           const npc = state.npcs.get(npcId);
           if (npc) {
-            state.npcs.set(npcId, {
-              ...npc,
-              relationship: { ...npc.relationship, daysSinceContact: 0, neglectWarning: false },
-            });
+            npc.relationship.daysSinceContact = 0;
+            npc.relationship.neglectWarning = false;
+            npc.relationship.totalInteractions += 1;
           }
         });
       },
@@ -1268,35 +1535,57 @@ export const useGameStore = create<GameStore>()(
         const state = get();
         return (state.player?.finances.balance ?? 0) >= amount;
       },
+
+      getLocationsCount: () => {
+        return get().locations.size;
+      },
+
+      getNPCsCount: () => {
+        return get().npcs.size;
+      },
     })),
     {
       name: 'ai-rpg-save',
-      version: 2, // Increment this when save format changes
+      version: 3, // Increment this when save format changes
       partialize: (state) => ({
         initialized: state.initialized,
         gameTime: state.gameTime,
         player: state.player,
-        npcs: Object.fromEntries(state.npcs),
-        locations: Object.fromEntries(state.locations),
-        quests: Object.fromEntries(state.quests),
+        npcs: Object.fromEntries(Array.from(state.npcs)),
+        locations: Object.fromEntries(Array.from(state.locations)),
+        quests: Object.fromEntries(Array.from(state.quests)),
         events: state.events,
         phone: state.phone,
         globalFlags: state.globalFlags,
-        worldWiki: Object.fromEntries(state.worldWiki),
+        worldWiki: Object.fromEntries(Array.from(state.worldWiki)),
         totalPlayTime: state.totalPlayTime,
         worldSettings: state.worldSettings,
         emailState: state.emailState,
       }),
       migrate: (persistedState, version) => {
         // Clear old incompatible saves
-        if (version < 2) {
-          console.log('Clearing old save data (version upgrade)');
+        if (version < 3) {
+          console.log('Clearing old save data (version upgrade to fix Immer compatibility)');
           return {
             initialized: false,
             npcs: {},
             locations: {},
             quests: {},
             worldWiki: {},
+            gameTime: {
+              day: 1,
+              hour: 8,
+              minute: 0,
+              dayOfWeek: 'monday',
+              season: 'spring',
+              weather: 'sunny',
+            },
+            player: null,
+            events: [],
+            phone: null,
+            emailState: null,
+            globalFlags: {},
+            totalPlayTime: 0,
           };
         }
         return persistedState;
@@ -1305,26 +1594,29 @@ export const useGameStore = create<GameStore>()(
         // Convert plain objects back to Maps after rehydration
         if (state) {
           try {
-            if (state.npcs && !(state.npcs instanceof Map)) {
-              state.npcs = new Map(Object.entries(state.npcs));
+            // Cast to any to avoid type issues during rehydration
+            const anyState = state as any;
+            if (anyState.npcs && !(anyState.npcs instanceof Map)) {
+              anyState.npcs = new Map(Object.entries(anyState.npcs));
             }
-            if (state.locations && !(state.locations instanceof Map)) {
-              state.locations = new Map(Object.entries(state.locations));
+            if (anyState.locations && !(anyState.locations instanceof Map)) {
+              anyState.locations = new Map(Object.entries(anyState.locations));
             }
-            if (state.quests && !(state.quests instanceof Map)) {
-              state.quests = new Map(Object.entries(state.quests));
+            if (anyState.quests && !(anyState.quests instanceof Map)) {
+              anyState.quests = new Map(Object.entries(anyState.quests));
             }
-            if (state.worldWiki && !(state.worldWiki instanceof Map)) {
-              state.worldWiki = new Map(Object.entries(state.worldWiki));
+            if (anyState.worldWiki && !(anyState.worldWiki instanceof Map)) {
+              anyState.worldWiki = new Map(Object.entries(anyState.worldWiki));
             }
           } catch (error) {
             console.error('Error rehydrating state, resetting:', error);
-            // Reset to empty Maps on error
-            state.npcs = new Map();
-            state.locations = new Map();
-            state.quests = new Map();
-            state.worldWiki = new Map();
-            state.initialized = false;
+            // Reset to empty Maps on error - cast to any for direct mutation
+            const anyState = state as any;
+            anyState.npcs = new Map();
+            anyState.locations = new Map();
+            anyState.quests = new Map();
+            anyState.worldWiki = new Map();
+            anyState.initialized = false;
           }
         }
       },

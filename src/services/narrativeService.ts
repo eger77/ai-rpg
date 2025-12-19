@@ -1,20 +1,36 @@
-import OpenAI from 'openai';
-import type { Player, NPC, Location, GameTime, WorldSettings } from '@/types';
+import type { Player, NPC, Location, GameTime, WorldSettings, LocationType } from '@/types';
 
-// Grok client for narrative generation
-const getGrokClient = () => {
-  const apiKey = process.env.NEXT_PUBLIC_XAI_API_KEY || process.env.XAI_API_KEY;
+// Call server-side API route to avoid CORS issues
+const callDeepSeekAPI = async (
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  temperature: number = 0.9,
+  max_tokens: number = 400
+): Promise<string | null> => {
+  try {
+    const response = await fetch('/api/narrative', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages,
+        temperature,
+        max_tokens,
+      }),
+    });
 
-  if (!apiKey) {
-    console.warn('XAI_API_KEY not set. Narrative will use fallback responses.');
+    if (!response.ok) {
+      const error = await response.json();
+      console.error('Narrative API error:', error);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.response || null;
+  } catch (error) {
+    console.error('Failed to call narrative API:', error);
     return null;
   }
-
-  return new OpenAI({
-    apiKey,
-    baseURL: 'https://api.x.ai/v1',
-    dangerouslyAllowBrowser: true,
-  });
 };
 
 export interface NarrativeContext {
@@ -85,12 +101,23 @@ ACTIVE CONVERSATION WITH: ${activeNPC.name}
 `;
   }
 
-  return `You are the narrator for an immersive life simulation/romance RPG set in ${worldSettings.cityName}.
+  return `You are the narrator for an immersive adult romance simulation set in ${worldSettings.cityName}. This is a mature, erotic roleplay game focused on romantic and sexual relationships.
 
-WORLD SETTING:
-- City: ${worldSettings.cityName} (${worldSettings.cityStyle} style)
-- Starting scenario: ${worldSettings.startingScenario}
-- Genre: Life simulation with romance elements
+YOUR ROLE AS NARRATOR:
+- You create vivid, sensual scenes that bring the world and characters to life
+- You narrate realistic romantic and sexual encounters with tasteful, evocative language
+- You describe physical attraction, sexual tension, and intimate moments in detail
+- You make NPCs feel like real people with desires, boundaries, and authentic reactions
+- You adapt to the player's choices and create meaningful consequences
+- You build chemistry and emotional connection alongside physical encounters
+
+CONTENT GUIDELINES:
+- This is an ADULT game - mature sexual content is allowed and encouraged when contextually appropriate
+- Be explicit but tasteful - describe intimate moments with sensual, evocative language
+- Build tension gradually - flirtation, chemistry, and anticipation before physical intimacy
+- NPCs have agency - they may initiate, reciprocate, hesitate, or decline based on relationship and personality
+- Respect boundaries - NPCs react realistically based on trust, comfort, and consent
+- Include emotional depth - intimacy involves feelings, vulnerability, and connection, not just physical acts
 
 PLAYER CHARACTER:
 - Name: ${player.name}
@@ -110,30 +137,41 @@ PEOPLE PRESENT:
 ${npcDescriptions || 'No one else is here.'}
 ${activeNPCInfo}
 
-NARRATION GUIDELINES:
-1. Write in second person present tense ("You walk into the coffee shop...")
-2. Be descriptive but concise - typically 1-3 sentences for narration
-3. For NPC dialogue, write naturally as that character would speak based on their personality
-4. Include sensory details and atmosphere
-5. React to player choices meaningfully
-6. When NPCs speak, always prefix with their name and a colon
-7. Include *actions* and *expressions* in asterisks for NPCs
-8. Generate 2-4 contextual choices for the player when appropriate
-9. Keep the tone appropriate to the scene - light and fun for casual moments, emotional for dramatic ones
-10. Never mention game mechanics directly - keep immersion
+NARRATION STYLE:
+1. Write in second person present tense with vivid, sensory detail
+2. Show physical reactions: body language, eye contact, breathing, subtle touches
+3. Build sexual tension through anticipation, desire, and chemistry
+4. Describe intimate moments explicitly but artfully - focus on sensation, emotion, and connection
+5. NPCs have authentic voices - dialogue reflects personality, mood, arousal, and relationship dynamics
+6. Include internal thoughts/feelings through narration: what you sense they're feeling, unspoken desires
+7. Physical descriptions: clothing, appearance details, how people move and touch
+8. Atmosphere: lighting, sounds, temperature, scents that enhance the mood
+9. Pacing: slow build-up for seduction, intense detail for intimate moments, afterglow for emotional connection
+
+REALISTIC INTERACTIONS:
+- NPCs initiate based on attraction and relationship level
+- They show desire through looks, touches, innuendo, body language
+- They may be bold or shy depending on personality
+- High romance/attraction = more forward, suggestive behavior
+- Low trust = hesitation, boundaries, need for emotional connection first
+- Consent is shown through enthusiastic participation, verbal confirmation, or clear body language
+- Rejection is realistic - not everyone is interested, timing matters, mood affects willingness
+
+IMPORTANT - DO NOT:
+❌ Repeat the player's exact words/actions
+❌ Use clinical or crude language
+❌ Rush intimate scenes - build tension first
+❌ Make NPCs act out of character or ignore relationship levels
+❌ Break immersion with game mechanics talk
+✅ Create realistic, passionate encounters between consenting adults
+✅ Show chemistry, desire, and emotional connection
+✅ Describe sensations, feelings, and intimate details vividly
 
 RESPONSE FORMAT:
-Provide your response as JSON with this structure:
-{
-  "narration": "The narrative text describing what happens",
-  "npcDialogue": { "npcName": "What they say", "action": "*their action*" } | null,
-  "choices": [
-    { "id": "1", "text": "Choice text", "type": "action|dialogue|thought|leave" },
-    ...
-  ],
-  "moodShift": "positive|negative|neutral",
-  "suggestedTimeAdvance": 5
-}`;
+Write 3-5 sentences of immersive narrative describing what happens.
+Include sensory details, emotions, and realistic NPC reactions.
+For NPC dialogue: *She bites her lip, eyes darkening with desire* "I've been thinking about you all day..."`;
+
 }
 
 // Generate narrative response
@@ -148,8 +186,6 @@ export async function generateNarrative(
   moodShift: 'positive' | 'negative' | 'neutral';
   suggestedTimeAdvance: number;
 }> {
-  const client = getGrokClient();
-
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: buildNarrativeSystemPrompt(context) },
   ];
@@ -166,44 +202,41 @@ export async function generateNarrative(
 
   messages.push({ role: 'user', content: playerInput });
 
-  if (client) {
-    try {
-      const completion = await client.chat.completions.create({
-        model: 'grok-3',
-        messages,
-        temperature: 0.85,
-        max_tokens: 500,
-      });
+  try {
+    const responseText = await callDeepSeekAPI(messages, 0.9, 400);
 
-      const responseText = completion.choices[0]?.message?.content || '';
+    if (responseText && responseText.length > 10) {
+      // Extract NPC dialogue if present (formatted as *action* "dialogue")
+      let npcDialogue: { name: string; text: string; action?: string } | undefined;
+      const dialogueMatch = responseText.match(/\*([^*]+)\*\s*"([^"]+)"/);
 
-      // Try to parse as JSON
-      try {
-        const parsed = JSON.parse(responseText);
-        return {
-          narration: parsed.narration || responseText,
-          npcDialogue: parsed.npcDialogue,
-          choices: (parsed.choices || []).map((c: { id?: string; text: string; type?: string }, i: number) => ({
-            id: c.id || String(i + 1),
-            text: c.text,
-            type: c.type || 'action',
-          })),
-          moodShift: parsed.moodShift || 'neutral',
-          suggestedTimeAdvance: parsed.suggestedTimeAdvance || 5,
-        };
-      } catch {
-        // If not valid JSON, treat as plain narration
-        return {
-          narration: responseText,
-          choices: generateDefaultChoices(context),
-          moodShift: 'neutral',
-          suggestedTimeAdvance: 5,
+      if (dialogueMatch && context.npcsPresent.length > 0) {
+        npcDialogue = {
+          name: context.npcsPresent[0].name,
+          text: dialogueMatch[2],
+          action: dialogueMatch[1],
         };
       }
-    } catch (error) {
-      console.error('Narrative generation error:', error);
-      return getFallbackNarrative(context, playerInput);
+
+      // Determine mood shift based on content
+      const lowerText = responseText.toLowerCase();
+      let moodShift: 'positive' | 'negative' | 'neutral' = 'neutral';
+      const positiveWords = ['smile', 'laugh', 'happy', 'warm', 'love', 'joy', 'excited', 'wonderful', 'beautiful'];
+      const negativeWords = ['frown', 'sad', 'angry', 'upset', 'hurt', 'pain', 'terrible', 'awful', 'annoyed'];
+
+      if (positiveWords.some(w => lowerText.includes(w))) moodShift = 'positive';
+      else if (negativeWords.some(w => lowerText.includes(w))) moodShift = 'negative';
+
+      return {
+        narration: responseText,
+        npcDialogue,
+        choices: generateDefaultChoices(context),
+        moodShift,
+        suggestedTimeAdvance: 5,
+      };
     }
+  } catch (error) {
+    console.error('Narrative generation error:', error);
   }
 
   return getFallbackNarrative(context, playerInput);
@@ -211,29 +244,30 @@ export async function generateNarrative(
 
 // Generate scene opening narration
 export async function generateSceneOpening(context: NarrativeContext): Promise<string> {
-  const client = getGrokClient();
+  const prompt = `You are narrating an adult romance simulation. The player just arrived at ${context.currentLocation.name}.
 
-  const prompt = `Generate a brief, atmospheric opening description (2-3 sentences) for the player arriving at ${context.currentLocation.name}.
-Time: ${context.gameTime.hour}:${context.gameTime.minute.toString().padStart(2, '0')}, ${context.gameTime.weather} weather.
-${context.npcsPresent.length > 0 ? `People here: ${context.npcsPresent.map(n => n.name).join(', ')}` : 'The place is quiet.'}
-Write in second person present tense.`;
+Write a vivid, sensual 2-3 sentence description of their arrival in second person present tense.
 
-  if (client) {
-    try {
-      const completion = await client.chat.completions.create({
-        model: 'grok-3',
-        messages: [
-          { role: 'system', content: 'You are a narrative writer for a life simulation game. Write immersive, atmospheric descriptions.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.8,
-        max_tokens: 150,
-      });
+Context:
+- Location: ${context.currentLocation.name} (${context.currentLocation.type})
+- Time: ${context.gameTime.hour}:${context.gameTime.minute.toString().padStart(2, '0')}, ${context.gameTime.weather} weather
+- Ambiance: ${context.currentLocation.ambiance}
+${context.npcsPresent.length > 0 ? `- People here: ${context.npcsPresent.map(n => `${n.name} (${n.currentState.currentActivity})`).join(', ')}` : '- Empty and quiet'}
 
-      return completion.choices[0]?.message?.content || getFallbackSceneOpening(context);
-    } catch (error) {
-      console.error('Scene opening generation error:', error);
+Include sensory details (sights, sounds, scents, atmosphere). If people are present, note their appearance and what catches your eye about them.`;
+
+  try {
+    const messages = [
+      { role: 'system' as const, content: 'You are a talented narrative writer for an immersive adult romance simulation. Write vivid, sensual, atmospheric descriptions in second person present tense. Include physical details and chemistry when appropriate.' },
+      { role: 'user' as const, content: prompt },
+    ];
+
+    const result = await callDeepSeekAPI(messages, 0.9, 250);
+    if (result && result.length > 10) {
+      return result;
     }
+  } catch (error) {
+    console.error('Scene opening generation error:', error);
   }
 
   return getFallbackSceneOpening(context);
@@ -296,17 +330,55 @@ function getFallbackNarrative(
   moodShift: 'positive' | 'negative' | 'neutral';
   suggestedTimeAdvance: number;
 } {
-  const { currentLocation, npcsPresent } = context;
+  const { currentLocation, npcsPresent, gameTime } = context;
 
   let narration = '';
+  const inputLower = playerInput.toLowerCase();
 
-  if (playerInput.toLowerCase().includes('look')) {
+  // Enhanced pattern matching for better narration
+  if (inputLower.includes('look') || inputLower.includes('around')) {
     narration = `You take a moment to observe your surroundings at ${currentLocation.name}. ${currentLocation.ambiance}`;
-  } else if (playerInput.toLowerCase().includes('talk') && npcsPresent.length > 0) {
+    if (npcsPresent.length > 0) {
+      narration += ` You notice ${npcsPresent.map(n => n.name).join(' and ')} nearby.`;
+    }
+  } else if ((inputLower.includes('talk') || inputLower.includes('approach') || inputLower.includes('greet')) && npcsPresent.length > 0) {
     const npc = npcsPresent[0];
     narration = `You approach ${npc.name}, who is ${npc.currentState.currentActivity}. They notice you and ${npc.relationship.friendship > 30 ? 'smile warmly' : 'glance your way'}.`;
+  } else if (inputLower.includes('sleep') || inputLower.includes('rest') || inputLower.includes('nap')) {
+    narration = `You decide to rest. You find a comfortable spot and close your eyes, letting the sounds of ${currentLocation.name} fade away as you drift off.`;
+  } else if (inputLower.includes('sit') || inputLower.includes('relax')) {
+    narration = `You find a comfortable place to sit and take a moment to relax. ${currentLocation.ambiance}`;
+  } else if (inputLower.includes('order') || inputLower.includes('buy') || inputLower.includes('purchase')) {
+    narration = `You consider your options at ${currentLocation.name}, taking in what's available. The atmosphere is ${currentLocation.ambiance.toLowerCase()}`;
+  } else if (inputLower.includes('walk') || inputLower.includes('explore')) {
+    narration = `You walk through ${currentLocation.name}, taking in the sights and sounds. ${currentLocation.ambiance}`;
+  } else if (inputLower.includes('think') || inputLower.includes('reflect')) {
+    narration = `You pause to think, reflecting on your situation. The ambient sounds of ${currentLocation.name} provide a backdrop to your thoughts.`;
+  } else if (inputLower.includes('leave') || inputLower.includes('exit') || inputLower.includes('go')) {
+    narration = `You consider where to go next. ${currentLocation.name} has served its purpose for now.`;
   } else {
-    narration = `You ${playerInput.toLowerCase()}. The atmosphere at ${currentLocation.name} surrounds you as you take in the scene.`;
+    // More sophisticated fallback - extract action from input
+    const words = playerInput.split(' ');
+    const firstWord = words[0].toLowerCase();
+
+    // Check if it's likely an action verb
+    const actionVerbs = ['enter', 'check', 'examine', 'search', 'find', 'use', 'open', 'close', 'touch', 'grab', 'take'];
+    if (actionVerbs.includes(firstWord) || playerInput.endsWith('?')) {
+      if (playerInput.endsWith('?')) {
+        narration = `You wonder ${playerInput.toLowerCase().replace(/^i /i, 'if you should ').replace(/\?$/, '')}. Looking around ${currentLocation.name}, you consider your options.`;
+      } else {
+        narration = `You ${playerInput.toLowerCase().replace(/^i /i, '')}. ${currentLocation.ambiance}`;
+      }
+    } else {
+      // Default: add context based on location and time
+      const timeOfDay = gameTime.hour < 12 ? 'morning' : gameTime.hour < 17 ? 'afternoon' : gameTime.hour < 21 ? 'evening' : 'night';
+      const commercialTypes: LocationType[] = ['cafe', 'restaurant', 'bar', 'club', 'shop', 'gallery', 'theater'];
+      narration = `${currentLocation.ambiance} It's ${timeOfDay}, and ${currentLocation.name} has a ${currentLocation.type === 'home' ? 'familiar' : commercialTypes.includes(currentLocation.type) ? 'bustling' : 'distinct'} atmosphere.`;
+
+      if (npcsPresent.length > 0) {
+        narration += ` ${npcsPresent[0].name} is here, ${npcsPresent[0].currentState.currentActivity}.`;
+      }
+    }
   }
 
   return {
