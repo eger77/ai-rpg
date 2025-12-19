@@ -189,13 +189,33 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
     };
     setWorldSettings(worldSettings);
 
-    // Initialize the game with player data
+    // Initialize the game with player data including career
     initializeGame({
       name: character.name,
       age: character.age,
       gender: character.gender,
       appearance: character.appearance,
       stats: character.stats,
+      career: {
+        employed: true,
+        companyName: worldSettings.cityName + ' Industries',
+        position: world.careerPath || 'Office Worker',
+        department: 'General',
+        salary: 38400,
+        payFrequency: 'biweekly' as const,
+        nextPayday: 14,
+        workDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] as const,
+        workStartHour: 9,
+        workEndHour: 17,
+        performance: 70,
+        bossApproval: 60,
+        employmentDuration: 90,
+        promotionRequirements: [
+          { description: '6 months experience', met: false },
+          { description: 'Complete major project', met: false },
+          { description: 'Performance rating 85%+', met: false },
+        ],
+      },
     });
 
     // Add starter locations

@@ -73,7 +73,8 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
 
   // Generate initial scene when location changes
   useEffect(() => {
-    if (player && currentLocation && messages.length === 0) {
+    if (player && currentLocation) {
+      // Always generate scene when location changes
       generateInitialScene();
     }
   }, [player?.currentLocationId]);

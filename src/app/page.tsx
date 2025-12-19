@@ -21,8 +21,9 @@ import { generateInitialNPCs } from '@/systems/npcGenerator';
 type GameScreen = 'loading' | 'title' | 'character_creation' | 'game';
 
 export default function Home() {
-  const { initialized, player, advanceTime, moveToLocation, locations, npcs, addLocation, addNPC, paused, getLocationsCount, getNPCsCount } = useGameStore();
+  const { initialized, player, advanceTime, moveToLocation, locations, npcs, addLocation, addNPC, paused, getLocationsCount, getNPCsCount, resetGame } = useGameStore();
   const [screen, setScreen] = useState<GameScreen>('loading');
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   // UI State
   const [showPhone, setShowPhone] = useState(false);
@@ -109,21 +110,63 @@ export default function Home() {
             Build relationships, pursue your dreams, and live your story in this immersive life simulation RPG.
           </p>
           <div className="space-y-4">
-            <button
-              onClick={() => setScreen('character_creation')}
-              className="px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-semibold rounded-xl transition-all transform hover:scale-105 shadow-lg shadow-purple-500/30"
-            >
-              New Game
-            </button>
-            {initialized && player && (
+            {initialized && player ? (
+              <>
+                <button
+                  onClick={() => setScreen('game')}
+                  className="px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-semibold rounded-xl transition-all transform hover:scale-105 shadow-lg shadow-purple-500/30"
+                >
+                  Continue as {player.name}
+                </button>
+                <button
+                  onClick={() => setShowResetConfirm(true)}
+                  className="block w-full px-8 py-4 bg-gray-800 hover:bg-gray-700 text-white font-semibold rounded-xl transition-all"
+                >
+                  Start New Game
+                </button>
+              </>
+            ) : (
               <button
-                onClick={() => setScreen('game')}
-                className="block w-full px-8 py-4 bg-gray-800 hover:bg-gray-700 text-white font-semibold rounded-xl transition-all"
+                onClick={() => setScreen('character_creation')}
+                className="px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-semibold rounded-xl transition-all transform hover:scale-105 shadow-lg shadow-purple-500/30"
               >
-                Continue as {player.name}
+                New Game
               </button>
             )}
           </div>
+
+          {/* Reset Confirmation Dialog */}
+          {showResetConfirm && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="bg-gray-800 rounded-2xl p-6 max-w-md w-full border border-gray-700">
+                <h3 className="text-xl font-bold text-white mb-2">Start New Game?</h3>
+                <p className="text-gray-300 mb-6">
+                  This will permanently delete your current game as <strong>{player?.name}</strong>. All progress, relationships, and stats will be lost.
+                </p>
+                <p className="text-sm text-gray-400 mb-6">
+                  This action cannot be undone.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowResetConfirm(false)}
+                    className="flex-1 px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      resetGame();
+                      setShowResetConfirm(false);
+                      setScreen('character_creation');
+                    }}
+                    className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-500 text-white font-medium rounded-xl transition-colors"
+                  >
+                    Delete & Start New
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           <p className="text-gray-600 text-sm mt-8">
             A roleplay experience with dynamic characters, meaningful choices, and emergent stories.
           </p>

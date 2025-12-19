@@ -85,12 +85,20 @@ ACTIVE CONVERSATION WITH: ${activeNPC.name}
 `;
   }
 
-  return `You are the narrator for an immersive life simulation/romance RPG set in ${worldSettings.cityName}.
+  return `You are the narrator for an immersive romance simulation RPG set in ${worldSettings.cityName}.
+
+YOUR ROLE AS NARRATOR:
+- You bring the world to life through vivid, engaging descriptions
+- You narrate what happens as a result of the player's actions
+- You create meaningful interactions between the player and NPCs
+- You maintain immersion and emotional depth
+- You adapt to player choices and create consequences
 
 WORLD SETTING:
 - City: ${worldSettings.cityName} (${worldSettings.cityStyle} style)
 - Starting scenario: ${worldSettings.startingScenario}
 - Genre: Life simulation with romance elements
+- This is a story about relationships, personal growth, and meaningful connections
 
 PLAYER CHARACTER:
 - Name: ${player.name}
@@ -112,23 +120,32 @@ ${activeNPCInfo}
 
 NARRATION GUIDELINES:
 1. Write in second person present tense ("You walk into the coffee shop...")
-2. Be descriptive but concise - typically 1-3 sentences for narration
-3. For NPC dialogue, write naturally as that character would speak based on their personality
-4. Include sensory details and atmosphere
-5. React to player choices meaningfully
-6. When NPCs speak, always prefix with their name and a colon
-7. Include *actions* and *expressions* in asterisks for NPCs
-8. Generate 2-4 contextual choices for the player when appropriate
-9. Keep the tone appropriate to the scene - light and fun for casual moments, emotional for dramatic ones
-10. Never mention game mechanics directly - keep immersion
+2. Be descriptive and immersive - paint a picture with 2-4 sentences
+3. NEVER simply echo the player's action back to them - interpret and expand on it
+4. Show consequences and reactions to the player's actions
+5. Include sensory details: sights, sounds, smells, textures, atmosphere
+6. For NPC dialogue, write naturally based on their personality, mood, and relationship with the player
+7. Include *actions* and *expressions* in asterisks for NPCs (e.g., "*smiles warmly*")
+8. React to player choices meaningfully - create consequences and character reactions
+9. Generate 2-4 contextual choices that feel natural to the scene
+10. Keep the tone appropriate: light and fun for casual moments, emotional for dramatic ones, romantic when appropriate
+11. Never mention game mechanics directly - keep complete immersion
+12. Make NPCs feel alive - they have thoughts, feelings, and reactions
+13. Create tension, chemistry, and emotional moments in romantic interactions
+
+IMPORTANT - DO NOT:
+❌ Simply repeat the player's action (e.g., "You i enter the bar" or "You sleep. The atmosphere...")
+❌ Use generic, repetitive descriptions
+❌ Break character or mention being an AI
+✅ Instead: Describe what happens as a result of their action with vivid detail and consequences
 
 RESPONSE FORMAT:
 Provide your response as JSON with this structure:
 {
-  "narration": "The narrative text describing what happens",
-  "npcDialogue": { "npcName": "What they say", "action": "*their action*" } | null,
+  "narration": "Rich, immersive description of what happens (2-4 sentences, include sensory details)",
+  "npcDialogue": { "name": "NPC Name", "text": "What they say naturally", "action": "*their physical action or expression*" } | null,
   "choices": [
-    { "id": "1", "text": "Choice text", "type": "action|dialogue|thought|leave" },
+    { "id": "1", "text": "Specific, contextual choice text", "type": "action|dialogue|thought|leave" },
     ...
   ],
   "moodShift": "positive|negative|neutral",
@@ -296,17 +313,54 @@ function getFallbackNarrative(
   moodShift: 'positive' | 'negative' | 'neutral';
   suggestedTimeAdvance: number;
 } {
-  const { currentLocation, npcsPresent } = context;
+  const { currentLocation, npcsPresent, gameTime } = context;
 
   let narration = '';
+  const inputLower = playerInput.toLowerCase();
 
-  if (playerInput.toLowerCase().includes('look')) {
+  // Enhanced pattern matching for better narration
+  if (inputLower.includes('look') || inputLower.includes('around')) {
     narration = `You take a moment to observe your surroundings at ${currentLocation.name}. ${currentLocation.ambiance}`;
-  } else if (playerInput.toLowerCase().includes('talk') && npcsPresent.length > 0) {
+    if (npcsPresent.length > 0) {
+      narration += ` You notice ${npcsPresent.map(n => n.name).join(' and ')} nearby.`;
+    }
+  } else if ((inputLower.includes('talk') || inputLower.includes('approach') || inputLower.includes('greet')) && npcsPresent.length > 0) {
     const npc = npcsPresent[0];
     narration = `You approach ${npc.name}, who is ${npc.currentState.currentActivity}. They notice you and ${npc.relationship.friendship > 30 ? 'smile warmly' : 'glance your way'}.`;
+  } else if (inputLower.includes('sleep') || inputLower.includes('rest') || inputLower.includes('nap')) {
+    narration = `You decide to rest. You find a comfortable spot and close your eyes, letting the sounds of ${currentLocation.name} fade away as you drift off.`;
+  } else if (inputLower.includes('sit') || inputLower.includes('relax')) {
+    narration = `You find a comfortable place to sit and take a moment to relax. ${currentLocation.ambiance}`;
+  } else if (inputLower.includes('order') || inputLower.includes('buy') || inputLower.includes('purchase')) {
+    narration = `You consider your options at ${currentLocation.name}, taking in what's available. The atmosphere is ${currentLocation.ambiance.toLowerCase()}`;
+  } else if (inputLower.includes('walk') || inputLower.includes('explore')) {
+    narration = `You walk through ${currentLocation.name}, taking in the sights and sounds. ${currentLocation.ambiance}`;
+  } else if (inputLower.includes('think') || inputLower.includes('reflect')) {
+    narration = `You pause to think, reflecting on your situation. The ambient sounds of ${currentLocation.name} provide a backdrop to your thoughts.`;
+  } else if (inputLower.includes('leave') || inputLower.includes('exit') || inputLower.includes('go')) {
+    narration = `You consider where to go next. ${currentLocation.name} has served its purpose for now.`;
   } else {
-    narration = `You ${playerInput.toLowerCase()}. The atmosphere at ${currentLocation.name} surrounds you as you take in the scene.`;
+    // More sophisticated fallback - extract action from input
+    const words = playerInput.split(' ');
+    const firstWord = words[0].toLowerCase();
+
+    // Check if it's likely an action verb
+    const actionVerbs = ['enter', 'check', 'examine', 'search', 'find', 'use', 'open', 'close', 'touch', 'grab', 'take'];
+    if (actionVerbs.includes(firstWord) || playerInput.endsWith('?')) {
+      if (playerInput.endsWith('?')) {
+        narration = `You wonder ${playerInput.toLowerCase().replace(/^i /i, 'if you should ').replace(/\?$/, '')}. Looking around ${currentLocation.name}, you consider your options.`;
+      } else {
+        narration = `You ${playerInput.toLowerCase().replace(/^i /i, '')}. ${currentLocation.ambiance}`;
+      }
+    } else {
+      // Default: add context based on location and time
+      const timeOfDay = gameTime.hour < 12 ? 'morning' : gameTime.hour < 17 ? 'afternoon' : gameTime.hour < 21 ? 'evening' : 'night';
+      narration = `${currentLocation.ambiance} It's ${timeOfDay}, and ${currentLocation.name} has a ${currentLocation.type === 'home' ? 'familiar' : currentLocation.type === 'commercial' ? 'bustling' : 'distinct'} atmosphere.`;
+
+      if (npcsPresent.length > 0) {
+        narration += ` ${npcsPresent[0].name} is here, ${npcsPresent[0].currentState.currentActivity}.`;
+      }
+    }
   }
 
   return {
