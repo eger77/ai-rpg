@@ -22,6 +22,7 @@ import type {
   Email,
   EmailState,
 } from '@/types';
+import { autonomousNPC } from '@/systems/autonomousNPC';
 
 // Enable Immer's MapSet plugin for Map/Set support
 enableMapSet();
@@ -550,33 +551,42 @@ export const useGameStore = create<GameStore>()(
             state.player.hygiene = Math.max(0, state.player.hygiene - minutes * 0.02);
           }
 
-          // Update NPC states
+          // Update NPC states using autonomous engine
           Array.from(state.npcs.keys()).forEach((id) => {
             const npc = state.npcs.get(id);
-            if (!npc) return;
+            if (!npc || !state.player) return;
 
-            // Update location based on schedule
-            const currentSchedule = npc.defaultSchedule.find((s) => {
-              const matchesDay =
-                s.dayOfWeek === 'all' ||
-                s.dayOfWeek === state.gameTime.dayOfWeek ||
-                (s.dayOfWeek === 'weekday' && !['saturday', 'sunday'].includes(state.gameTime.dayOfWeek)) ||
-                (s.dayOfWeek === 'weekend' && ['saturday', 'sunday'].includes(state.gameTime.dayOfWeek));
-
-              return matchesDay && newHour >= s.startHour && newHour < s.endHour;
-            });
-
-            if (currentSchedule) {
-              npc.currentState.currentLocationId = currentSchedule.locationId;
-              npc.currentState.currentActivity = currentSchedule.activity;
-              npc.currentState.availability = currentSchedule.interruptible ? 'available' : 'busy';
-            }
+            // Simulate NPC's day - updates location, mood, energy, availability
+            const updates = autonomousNPC.simulateNPCDay(npc, state.gameTime);
+            Object.assign(npc, updates);
 
             // Decay relationship if neglected
             if (npc.relationship.daysSinceContact > 3) {
               npc.relationship.friendship = Math.max(0, npc.relationship.friendship - 0.5);
               npc.relationship.romance = Math.max(0, npc.relationship.romance - 1);
               npc.relationship.neglectWarning = npc.relationship.daysSinceContact > 5;
+            }
+
+            // Increment daysSinceContact (reset when player messages them)
+            npc.relationship.daysSinceContact += minutes / (24 * 60);
+
+            // Random life events
+            if (Math.random() < 0.05) {
+              const lifeEvent = autonomousNPC.generateLifeEvent(npc, state.gameTime);
+              if (lifeEvent) {
+                // Store the life event in NPC's memory
+                npc.memories.push({
+                  id: generateId(),
+                  description: lifeEvent.description,
+                  day: state.gameTime.day,
+                  emotionalImpact: lifeEvent.type.includes('success') ? 20 : lifeEvent.type.includes('stress') || lifeEvent.type.includes('sick') ? -20 : 0,
+                  significance: lifeEvent.type.includes('success') || lifeEvent.type.includes('excited') ? 'notable' : 'forgettable',
+                  tags: [lifeEvent.type, 'autonomous_event'],
+                  referenceWeight: 1,
+                  timesReferenced: 0,
+                  involvedNPCs: [],
+                });
+              }
             }
           });
 
@@ -801,83 +811,66 @@ export const useGameStore = create<GameStore>()(
 
         if (knownNPCs.length === 0) return;
 
-        // Random chance for NPC to message (higher relationship = higher chance)
-        const npc = knownNPCs[Math.floor(Math.random() * knownNPCs.length)];
-        const messageProbability = Math.min(0.3, (npc.relationship.friendship + npc.relationship.romance) / 500);
+        // Check each NPC to see if they should proactively text
+        knownNPCs.forEach((npc) => {
+          if (autonomousNPC.shouldNPCTextPlayer(npc, state.player!, state.gameTime)) {
+            // Generate contextual message using autonomous engine
+            const content = autonomousNPC.generateProactiveMessage(npc, state.player!, state.gameTime);
 
-        if (Math.random() > messageProbability) return;
+            // Send the message
+            set((s) => {
+              if (!s.phone) return;
 
-        // Generate a contextual message based on relationship
-        const greetings = [
-          `Hey ${state.player.name}! How's it going?`,
-          `Was just thinking about you. What are you up to?`,
-          `Hey! Got a sec to chat?`,
-          `Hope you're having a good day!`,
-        ];
-        const friendlyMessages = [
-          `Wanna hang out sometime?`,
-          `Did you see that thing on the news?`,
-          `Coffee later?`,
-          `Miss our chats! Let's catch up soon`,
-        ];
-        const romanticMessages = [
-          `Can't stop thinking about our last conversation...`,
-          `When can I see you again?`,
-          `You make me smile 😊`,
-          `Are you free this weekend?`,
-        ];
+              let conversation = s.phone.conversations.find((c) => c.npcId === npc.id);
+              if (!conversation) {
+                conversation = {
+                  id: generateId(),
+                  npcId: npc.id,
+                  messages: [],
+                  unreadCount: 0,
+                  lastMessageTime: { ...s.gameTime },
+                  typing: false,
+                  readReceipts: true,
+                };
+                s.phone.conversations.push(conversation);
 
-        let messages = greetings;
-        if (npc.relationship.friendship > 40) {
-          messages = [...messages, ...friendlyMessages];
-        }
-        if (npc.relationship.romance > 30) {
-          messages = [...messages, ...romanticMessages];
-        }
+                // Ensure contact exists
+                const contactExists = s.phone.contacts.some((c) => c.npcId === npc.id);
+                if (!contactExists) {
+                  s.phone.contacts.push({
+                    id: generateId(),
+                    npcId: npc.id,
+                    blocked: false,
+                    favorite: false,
+                  });
+                }
+              }
 
-        const content = messages[Math.floor(Math.random() * messages.length)];
+              const newMessage: Message = {
+                id: generateId(),
+                senderId: npc.id,
+                content,
+                timestamp: { ...s.gameTime },
+                read: false,
+                delivered: true,
+              };
+              conversation.messages.push(newMessage);
+              conversation.unreadCount += 1;
+              conversation.lastMessageTime = { ...s.gameTime };
 
-        // Check if conversation exists, create if not
-        set((s) => {
-          if (!s.phone) return;
-
-          let conversation = s.phone.conversations.find((c) => c.npcId === npc.id);
-          if (!conversation) {
-            conversation = {
-              id: generateId(),
-              npcId: npc.id,
-              messages: [],
-              unreadCount: 0,
-              lastMessageTime: { ...s.gameTime },
-              typing: false,
-              readReceipts: true,
-            };
-            s.phone.conversations.push(conversation);
+              // Add notification
+              s.phone.notifications.push({
+                id: generateId(),
+                type: 'message',
+                title: npc.name,
+                body: content.substring(0, 50) + (content.length > 50 ? '...' : ''),
+                timestamp: { ...s.gameTime },
+                read: false,
+                sourceNpcId: npc.id,
+                urgent: false,
+              });
+            });
           }
-
-          const newMessage: Message = {
-            id: generateId(),
-            senderId: npc.id,
-            content,
-            timestamp: { ...s.gameTime },
-            read: false,
-            delivered: true,
-          };
-          conversation.messages.push(newMessage);
-          conversation.unreadCount += 1;
-          conversation.lastMessageTime = { ...s.gameTime };
-
-          // Add notification
-          s.phone.notifications.push({
-            id: generateId(),
-            type: 'message',
-            title: npc.name,
-            body: content.substring(0, 50) + (content.length > 50 ? '...' : ''),
-            timestamp: { ...s.gameTime },
-            read: false,
-            sourceNpcId: npc.id,
-            urgent: false,
-          });
         });
       },
 
