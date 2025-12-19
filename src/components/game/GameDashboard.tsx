@@ -33,6 +33,9 @@ import {
   Play,
   Pause,
   FastForward,
+  Settings,
+  RotateCcw,
+  X,
 } from 'lucide-react';
 
 interface GameDashboardProps {
@@ -65,6 +68,9 @@ export function GameDashboard({
   onViewNPC,
   onViewLocation,
 }: GameDashboardProps) {
+  const [showMenu, setShowMenu] = useState(false);
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
+
   const {
     player,
     gameTime,
@@ -79,6 +85,7 @@ export function GameDashboard({
     setGameSpeed,
     advanceTime,
     getNPCsAtLocation,
+    resetGame,
   } = useGameStore();
 
   if (!player) return null;
@@ -183,6 +190,13 @@ export function GameDashboard({
               title="Skip 30 minutes"
             >
               <FastForward className="w-4 h-4 text-white" />
+            </button>
+            <button
+              onClick={() => setShowMenu(true)}
+              className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg"
+              title="Menu"
+            >
+              <Settings className="w-4 h-4 text-white" />
             </button>
           </div>
 
@@ -354,6 +368,77 @@ export function GameDashboard({
           <NarrativeWindow onViewNPC={onViewNPC} onOpenMap={onOpenMap} />
         </div>
       </div>
+
+      {/* Game Menu Modal */}
+      {showMenu && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-gray-800 rounded-2xl p-6 max-w-md w-full border border-gray-700 mx-4">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-white">Game Menu</h3>
+              <button
+                onClick={() => setShowMenu(false)}
+                className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => setShowMenu(false)}
+                className="w-full px-4 py-3 bg-gray-700 hover:bg-gray-600 rounded-xl text-white font-medium text-left flex items-center gap-3 transition-colors"
+              >
+                <Play className="w-5 h-5" />
+                Resume Game
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowMenu(false);
+                  setShowRestartConfirm(true);
+                }}
+                className="w-full px-4 py-3 bg-red-600/20 hover:bg-red-600/30 rounded-xl text-red-400 font-medium text-left flex items-center gap-3 transition-colors border border-red-600/30"
+              >
+                <RotateCcw className="w-5 h-5" />
+                Restart Game
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restart Confirmation Dialog */}
+      {showRestartConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-gray-800 rounded-2xl p-6 max-w-md w-full border border-gray-700 mx-4">
+            <h3 className="text-xl font-bold text-white mb-2">Restart Game?</h3>
+            <p className="text-gray-300 mb-4">
+              This will permanently delete your current game as <strong>{player.name}</strong>.
+              All progress, relationships, and stats will be lost.
+            </p>
+            <p className="text-sm text-gray-400 mb-6">
+              This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowRestartConfirm(false)}
+                className="flex-1 px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  resetGame();
+                  window.location.reload();
+                }}
+                className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-500 text-white font-medium rounded-xl transition-colors"
+              >
+                Delete & Restart
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

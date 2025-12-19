@@ -1004,11 +1004,12 @@ export const useGameStore = create<GameStore>()(
             }
           }
 
-          // Reset days since contact
+          // Reset days since contact and increment totalInteractions
           const npc = state.npcs.get(npcId);
           if (npc) {
             npc.relationship.daysSinceContact = 0;
             npc.relationship.neglectWarning = false;
+            npc.relationship.totalInteractions += 1;
           }
         });
       },
@@ -1099,6 +1100,17 @@ export const useGameStore = create<GameStore>()(
       sendTextMessage: (npcId, content) => {
         set((state) => {
           if (state.phone) {
+            // Ensure NPC is in contacts - add them if they're not
+            const contactExists = state.phone.contacts.some((c) => c.npcId === npcId);
+            if (!contactExists) {
+              state.phone.contacts.push({
+                id: generateId(),
+                npcId,
+                blocked: false,
+                favorite: false,
+              });
+            }
+
             let conversation = state.phone.conversations.find((c) => c.npcId === npcId);
             if (!conversation) {
               // Create new conversation if it doesn't exist
@@ -1126,11 +1138,12 @@ export const useGameStore = create<GameStore>()(
             conversation.lastMessageTime = { ...state.gameTime };
           }
 
-          // Reset days since contact
+          // Reset days since contact and increment totalInteractions
           const npc = state.npcs.get(npcId);
           if (npc) {
             npc.relationship.daysSinceContact = 0;
             npc.relationship.neglectWarning = false;
+            npc.relationship.totalInteractions += 1;
           }
         });
       },
