@@ -140,17 +140,10 @@ IMPORTANT - DO NOT:
 ✅ Instead: Describe what happens as a result of their action with vivid detail and consequences
 
 RESPONSE FORMAT:
-Provide your response as JSON with this structure:
-{
-  "narration": "Rich, immersive description of what happens (2-4 sentences, include sensory details)",
-  "npcDialogue": { "name": "NPC Name", "text": "What they say naturally", "action": "*their physical action or expression*" } | null,
-  "choices": [
-    { "id": "1", "text": "Specific, contextual choice text", "type": "action|dialogue|thought|leave" },
-    ...
-  ],
-  "moodShift": "positive|negative|neutral",
-  "suggestedTimeAdvance": 5
-}`;
+Write ONLY the narrative description - a vivid, immersive paragraph (2-4 sentences) describing what happens.
+Do NOT include JSON, choices, or metadata - just the story narration.
+If an NPC responds, include their dialogue naturally like: *Sarah smiles warmly* "Hey! Good to see you."`;
+
 }
 
 // Generate narrative response
@@ -186,40 +179,46 @@ export async function generateNarrative(
   if (client) {
     try {
       const completion = await client.chat.completions.create({
-        model: 'grok-3',
+        model: 'grok-beta',
         messages,
         temperature: 0.85,
-        max_tokens: 500,
+        max_tokens: 300,
       });
 
-      const responseText = completion.choices[0]?.message?.content || '';
+      const responseText = completion.choices[0]?.message?.content?.trim() || '';
 
-      // Try to parse as JSON
-      try {
-        const parsed = JSON.parse(responseText);
-        return {
-          narration: parsed.narration || responseText,
-          npcDialogue: parsed.npcDialogue,
-          choices: (parsed.choices || []).map((c: { id?: string; text: string; type?: string }, i: number) => ({
-            id: c.id || String(i + 1),
-            text: c.text,
-            type: c.type || 'action',
-          })),
-          moodShift: parsed.moodShift || 'neutral',
-          suggestedTimeAdvance: parsed.suggestedTimeAdvance || 5,
-        };
-      } catch {
-        // If not valid JSON, treat as plain narration
+      if (responseText && responseText.length > 10) {
+        // Extract NPC dialogue if present (formatted as *action* "dialogue")
+        let npcDialogue: { name: string; text: string; action?: string } | undefined;
+        const dialogueMatch = responseText.match(/\*([^*]+)\*\s*"([^"]+)"/);
+
+        if (dialogueMatch && context.npcsPresent.length > 0) {
+          npcDialogue = {
+            name: context.npcsPresent[0].name,
+            text: dialogueMatch[2],
+            action: dialogueMatch[1],
+          };
+        }
+
+        // Determine mood shift based on content
+        const lowerText = responseText.toLowerCase();
+        let moodShift: 'positive' | 'negative' | 'neutral' = 'neutral';
+        const positiveWords = ['smile', 'laugh', 'happy', 'warm', 'love', 'joy', 'excited', 'wonderful', 'beautiful'];
+        const negativeWords = ['frown', 'sad', 'angry', 'upset', 'hurt', 'pain', 'terrible', 'awful', 'annoyed'];
+
+        if (positiveWords.some(w => lowerText.includes(w))) moodShift = 'positive';
+        else if (negativeWords.some(w => lowerText.includes(w))) moodShift = 'negative';
+
         return {
           narration: responseText,
+          npcDialogue,
           choices: generateDefaultChoices(context),
-          moodShift: 'neutral',
+          moodShift,
           suggestedTimeAdvance: 5,
         };
       }
     } catch (error) {
       console.error('Narrative generation error:', error);
-      return getFallbackNarrative(context, playerInput);
     }
   }
 
@@ -230,24 +229,34 @@ export async function generateNarrative(
 export async function generateSceneOpening(context: NarrativeContext): Promise<string> {
   const client = getGrokClient();
 
-  const prompt = `Generate a brief, atmospheric opening description (2-3 sentences) for the player arriving at ${context.currentLocation.name}.
-Time: ${context.gameTime.hour}:${context.gameTime.minute.toString().padStart(2, '0')}, ${context.gameTime.weather} weather.
-${context.npcsPresent.length > 0 ? `People here: ${context.npcsPresent.map(n => n.name).join(', ')}` : 'The place is quiet.'}
-Write in second person present tense.`;
+  const prompt = `You are narrating a life simulation game. The player just arrived at ${context.currentLocation.name}.
+
+Write a vivid, immersive 2-3 sentence description of their arrival using second person present tense ("You step into...").
+
+Context:
+- Location: ${context.currentLocation.name} (${context.currentLocation.type})
+- Time: ${context.gameTime.hour}:${context.gameTime.minute.toString().padStart(2, '0')}, ${context.gameTime.weather} weather
+- Ambiance: ${context.currentLocation.ambiance}
+${context.npcsPresent.length > 0 ? `- People present: ${context.npcsPresent.map(n => `${n.name} (${n.currentState.currentActivity})`).join(', ')}` : '- The place is quiet'}
+
+Make it atmospheric with sensory details (sights, sounds, smells). Show, don't tell.`;
 
   if (client) {
     try {
       const completion = await client.chat.completions.create({
-        model: 'grok-3',
+        model: 'grok-beta',
         messages: [
-          { role: 'system', content: 'You are a narrative writer for a life simulation game. Write immersive, atmospheric descriptions.' },
+          { role: 'system', content: 'You are a talented narrative writer for an immersive life simulation romance game. Write vivid, atmospheric descriptions in second person present tense.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.8,
-        max_tokens: 150,
+        max_tokens: 200,
       });
 
-      return completion.choices[0]?.message?.content || getFallbackSceneOpening(context);
+      const result = completion.choices[0]?.message?.content?.trim();
+      if (result && result.length > 10) {
+        return result;
+      }
     } catch (error) {
       console.error('Scene opening generation error:', error);
     }
