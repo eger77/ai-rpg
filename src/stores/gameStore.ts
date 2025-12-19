@@ -23,6 +23,7 @@ import type {
   EmailState,
 } from '@/types';
 import { autonomousNPC } from '@/systems/autonomousNPC';
+import { financialManager } from '@/systems/financialManager';
 
 // Enable Immer's MapSet plugin for Map/Set support
 enableMapSet();
@@ -589,6 +590,112 @@ export const useGameStore = create<GameStore>()(
               }
             }
           });
+
+          // Financial processing - check if a new day has started
+          const previousDay = state.gameTime.day - (newDay - state.gameTime.day);
+          const dayChanged = newDay !== previousDay;
+
+          if (dayChanged && state.player && state.phone) {
+            // Process bills that are due today
+            const billResults = financialManager.processDueBills(state.player, state.gameTime);
+
+            billResults.forEach((result) => {
+              // Add transaction record
+              state.player!.finances.transactions.push({
+                id: generateId(),
+                amount: -result.amount,
+                category: 'utilities',
+                description: `${result.billName} - Auto-pay`,
+                timestamp: { ...state.gameTime },
+              });
+
+              // Add notification for bill payment
+              state.phone!.notifications.push({
+                id: generateId(),
+                type: 'system',
+                title: result.overdraft ? '⚠️ Bill Paid - Overdraft' : '✓ Bill Paid',
+                body: result.overdraft
+                  ? `${result.billName}: $${result.amount} + $${result.overdraftFee} overdraft fee. Balance: $${result.newBalance.toFixed(2)}`
+                  : `${result.billName}: $${result.amount}. Balance: $${result.newBalance.toFixed(2)}`,
+                timestamp: { ...state.gameTime },
+                read: false,
+                urgent: result.overdraft,
+              });
+
+              // If overdraft, add email warning
+              if (result.overdraft) {
+                state.phone!.emails.push({
+                  id: generateId(),
+                  from: 'First National Bank',
+                  fromAddress: 'alerts@firstnational.com',
+                  subject: 'Overdraft Notice - Account Alert',
+                  body: `Dear ${state.player!.name},\n\nYour account has been overdrawn. A payment of $${result.amount} for "${result.billName}" was processed, but your account balance was insufficient.\n\nOverdraft fee: $${result.overdraftFee}\nCurrent balance: $${result.newBalance.toFixed(2)}\n\nPlease deposit funds to bring your account back to positive balance.\n\nThank you,\nFirst National Bank`,
+                  timestamp: { ...state.gameTime },
+                  read: false,
+                  starred: false,
+                  folder: 'inbox',
+                });
+              }
+            });
+
+            // Process paycheck if it's payday
+            const paycheckResult = financialManager.processPaycheck(state.player, state.gameTime);
+            if (paycheckResult && paycheckResult.received) {
+              // Add transaction record
+              state.player.finances.transactions.push({
+                id: generateId(),
+                amount: paycheckResult.amount,
+                category: 'salary',
+                description: `${state.player.career.companyName} - Paycheck`,
+                timestamp: { ...state.gameTime },
+              });
+
+              // Add notification
+              state.phone.notifications.push({
+                id: generateId(),
+                type: 'system',
+                title: '💰 Paycheck Deposited',
+                body: `$${paycheckResult.amount.toFixed(2)} from ${state.player.career.companyName}. New balance: $${state.player.finances.balance.toFixed(2)}`,
+                timestamp: { ...state.gameTime },
+                read: false,
+                urgent: false,
+              });
+            }
+
+            // Reset monthly bills on day 1 of each month
+            if (newDay % 30 === 1) {
+              financialManager.resetMonthlyBills(state.player);
+            }
+
+            // Quarterly performance review and potential raise (every 90 days)
+            if (newDay % 90 === 0 && state.player.career.employed) {
+              const raiseResult = financialManager.checkForRaise(state.player, state.gameTime);
+              if (raiseResult.raised) {
+                state.phone.notifications.push({
+                  id: generateId(),
+                  type: 'system',
+                  title: '🎉 Salary Increase!',
+                  body: `Congratulations! Your salary has been increased to $${raiseResult.newSalary}. ${raiseResult.reason}`,
+                  timestamp: { ...state.gameTime },
+                  read: false,
+                  urgent: false,
+                });
+
+                // Add email from boss
+                state.phone.emails.push({
+                  id: generateId(),
+                  from: state.player.career.companyName,
+                  fromAddress: 'hr@company.com',
+                  subject: 'Performance Review - Salary Adjustment',
+                  body: `Dear ${state.player.name},\n\nFollowing your recent performance review, we are pleased to inform you that your annual salary has been adjusted to $${raiseResult.newSalary}.\n\n${raiseResult.reason}\n\nKeep up the excellent work!\n\nBest regards,\nHuman Resources`,
+                  timestamp: { ...state.gameTime },
+                  read: false,
+                  starred: false,
+                  folder: 'inbox',
+                });
+              }
+            }
+          }
 
           state.totalPlayTime += minutes;
         });
