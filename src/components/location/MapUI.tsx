@@ -10,7 +10,6 @@ import {
   Lock,
   Unlock,
   Users,
-  ChevronRight,
   Home,
   Coffee,
   TreePine,
@@ -21,9 +20,7 @@ import {
   Dumbbell,
   Building,
   Search,
-  Map,
-  List,
-  Image as ImageIcon,
+  ArrowRight,
 } from 'lucide-react';
 
 interface MapUIProps {
@@ -75,11 +72,8 @@ export function MapUI({ isOpen, onClose, onSelectLocation, onTravelTo }: MapUIPr
   const { player, locations, gameTime, getNPCsAtLocation, worldSettings } = useGameStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<string | 'all'>('all');
-  const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
 
   if (!isOpen || !player) return null;
-
-  const cityMapUrl = worldSettings?.cityMapUrl;
 
   const allLocations = Array.from(locations.values());
 
@@ -131,38 +125,17 @@ export function MapUI({ isOpen, onClose, onSelectLocation, onTravelTo }: MapUIPr
             <MapPin className="w-6 h-6 text-white" />
             <div>
               <h2 className="text-xl font-bold text-white">
-                {worldSettings?.cityName || 'City'} Map
+                {worldSettings?.cityName || 'City'} - Travel
               </h2>
-              {worldSettings?.cityStyle && (
-                <p className="text-xs text-blue-100 capitalize">{worldSettings.cityStyle} city</p>
-              )}
+              <p className="text-xs text-blue-100">Select a location to visit</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {/* View Mode Toggle */}
-            <div className="flex bg-white/20 rounded-lg p-1">
-              <button
-                onClick={() => setViewMode('map')}
-                className={`p-2 rounded ${viewMode === 'map' ? 'bg-white/30' : ''} transition-colors`}
-                title="Map View"
-              >
-                <Map className="w-4 h-4 text-white" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`p-2 rounded ${viewMode === 'list' ? 'bg-white/30' : ''} transition-colors`}
-                title="List View"
-              >
-                <List className="w-4 h-4 text-white" />
-              </button>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5 text-white" />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-white" />
+          </button>
         </div>
 
         {/* Current Location Banner */}
@@ -177,12 +150,6 @@ export function MapUI({ isOpen, onClose, onSelectLocation, onTravelTo }: MapUIPr
                 <p className="text-white font-medium">{currentLocation.name}</p>
               </div>
             </div>
-            <button
-              onClick={() => onSelectLocation(currentLocation)}
-              className="px-3 py-1.5 bg-blue-600/30 hover:bg-blue-600/50 rounded-lg text-blue-300 text-sm transition-colors"
-            >
-              View Details
-            </button>
           </div>
         )}
 
@@ -214,70 +181,13 @@ export function MapUI({ isOpen, onClose, onSelectLocation, onTravelTo }: MapUIPr
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* Visual Map View */}
-          {viewMode === 'map' && (
-            <div className="mb-6">
-              {cityMapUrl ? (
-                <div className="relative rounded-xl overflow-hidden border border-gray-700">
-                  <img
-                    src={cityMapUrl}
-                    alt={`${worldSettings?.cityName || 'City'} Map`}
-                    className="w-full h-64 object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-gray-900/80 to-transparent" />
-                  <div className="absolute bottom-0 left-0 right-0 p-4">
-                    <h3 className="text-white font-bold text-lg">{worldSettings?.cityName || 'City'}</h3>
-                    <p className="text-gray-300 text-sm">
-                      {unlockedLocations.length} locations available • {lockedLocations.length} locked
-                    </p>
-                  </div>
-                  {/* Location markers on map */}
-                  <div className="absolute inset-0 flex flex-wrap items-center justify-center gap-4 p-8">
-                    {unlockedLocations.slice(0, 6).map((location, index) => {
-                      const Icon = LOCATION_ICONS[location.type] || Building;
-                      const colorClass = LOCATION_COLORS[location.type] || 'from-gray-500 to-gray-600';
-                      const isCurrentLocation = player.currentLocationId === location.id;
-                      // Position markers in different spots
-                      const positions = [
-                        'top-4 left-4', 'top-4 right-4',
-                        'top-1/3 left-1/4', 'top-1/3 right-1/4',
-                        'bottom-16 left-1/3', 'bottom-16 right-1/3',
-                      ];
-                      return (
-                        <button
-                          key={location.id}
-                          onClick={() => onSelectLocation(location)}
-                          className={`absolute ${positions[index]} group`}
-                          title={location.name}
-                        >
-                          <div className={`p-2 rounded-full bg-gradient-to-br ${colorClass} shadow-lg ${isCurrentLocation ? 'ring-2 ring-white ring-offset-2 ring-offset-gray-900' : ''} hover:scale-110 transition-transform`}>
-                            <Icon className="w-4 h-4 text-white" />
-                          </div>
-                          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-1 bg-gray-900/90 rounded text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
-                            {location.name}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-gray-700 bg-gradient-to-br from-blue-900/30 to-purple-900/30 p-8 text-center">
-                  <ImageIcon className="w-16 h-16 mx-auto text-gray-600 mb-4" />
-                  <p className="text-gray-400 mb-2">No map image generated yet</p>
-                  <p className="text-gray-500 text-sm">City map will be generated during character creation</p>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Unlocked Locations */}
           <div className="mb-8">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
               <Unlock className="w-5 h-5 text-green-400" />
               Available Locations ({unlockedLocations.length})
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-3">
               {unlockedLocations.map((location) => {
                 const Icon = LOCATION_ICONS[location.type] || Building;
                 const colorClass = LOCATION_COLORS[location.type] || 'from-gray-500 to-gray-600';
@@ -287,74 +197,69 @@ export function MapUI({ isOpen, onClose, onSelectLocation, onTravelTo }: MapUIPr
                 const travelTime = getTravelTime(location);
 
                 return (
-                  <div
+                  <button
                     key={location.id}
-                    className={`bg-gray-800/50 rounded-xl overflow-hidden border-2 transition-all ${
-                      isCurrentLocation ? 'border-blue-500' : 'border-transparent hover:border-gray-600'
+                    onClick={() => !isCurrentLocation && open ? onTravelTo(location) : onSelectLocation(location)}
+                    disabled={isCurrentLocation}
+                    className={`w-full bg-gray-800/50 rounded-xl border-2 transition-all text-left ${
+                      isCurrentLocation
+                        ? 'border-blue-500 opacity-75 cursor-default'
+                        : open
+                          ? 'border-transparent hover:border-blue-500 hover:bg-gray-800 cursor-pointer'
+                          : 'border-transparent opacity-60 cursor-not-allowed'
                     }`}
                   >
                     <div className={`h-2 bg-gradient-to-r ${colorClass}`} />
                     <div className="p-4">
-                      <div className="flex items-start gap-3">
-                        <div className={`p-2 rounded-lg bg-gradient-to-br ${colorClass}`}>
-                          <Icon className="w-5 h-5 text-white" />
+                      <div className="flex items-center gap-3">
+                        <div className={`p-3 rounded-lg bg-gradient-to-br ${colorClass}`}>
+                          <Icon className="w-6 h-6 text-white" />
                         </div>
                         <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-medium text-white">{location.name}</h4>
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-bold text-white text-lg">{location.name}</h4>
                             {isCurrentLocation && (
                               <span className="text-xs px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded">
-                                You are here
+                                Current Location
+                              </span>
+                            )}
+                            {!isCurrentLocation && open && (
+                              <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-400 rounded">
+                                Open
+                              </span>
+                            )}
+                            {!open && !isCurrentLocation && (
+                              <span className="text-xs px-2 py-0.5 bg-red-500/20 text-red-400 rounded">
+                                Closed
                               </span>
                             )}
                           </div>
-                          <p className="text-sm text-gray-400 capitalize">{location.type}</p>
-                        </div>
-                        <div className="text-right">
-                          <span
-                            className={`text-xs px-2 py-1 rounded ${
-                              open ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                            }`}
-                          >
-                            {open ? 'Open' : 'Closed'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 flex items-center gap-4 text-sm text-gray-400">
-                        <div className="flex items-center gap-1">
-                          <Clock className="w-4 h-4" />
-                          <span>{formatHours(location)}</span>
-                        </div>
-                        {npcsHere.length > 0 && (
-                          <div className="flex items-center gap-1">
-                            <Users className="w-4 h-4 text-purple-400" />
-                            <span className="text-purple-400">{npcsHere.length} here</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-3 flex gap-2">
-                        <button
-                          onClick={() => onSelectLocation(location)}
-                          className="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-white text-sm transition-colors"
-                        >
-                          Details
-                        </button>
-                        {!isCurrentLocation && open && (
-                          <button
-                            onClick={() => onTravelTo(location)}
-                            className="flex-1 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm transition-colors flex items-center justify-center gap-1"
-                          >
-                            Travel
-                            {travelTime && (
-                              <span className="text-blue-200">({travelTime}m)</span>
+                          <p className="text-sm text-gray-400 capitalize mb-2">{location.type}</p>
+                          <div className="flex items-center gap-4 text-xs text-gray-500">
+                            <div className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              <span>{formatHours(location)}</span>
+                            </div>
+                            {npcsHere.length > 0 && (
+                              <div className="flex items-center gap-1">
+                                <Users className="w-3 h-3 text-purple-400" />
+                                <span className="text-purple-400">{npcsHere.length} people here</span>
+                              </div>
                             )}
-                          </button>
+                            {!isCurrentLocation && travelTime && (
+                              <div className="flex items-center gap-1 text-blue-400">
+                                <Clock className="w-3 h-3" />
+                                <span>{travelTime} min travel</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {!isCurrentLocation && open && (
+                          <ArrowRight className="w-5 h-5 text-blue-400" />
                         )}
                       </div>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -367,40 +272,40 @@ export function MapUI({ isOpen, onClose, onSelectLocation, onTravelTo }: MapUIPr
                 <Lock className="w-5 h-5 text-red-400" />
                 Locked Locations ({lockedLocations.length})
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-3">
                 {lockedLocations.map((location) => {
                   const Icon = LOCATION_ICONS[location.type] || Building;
 
                   return (
                     <div
                       key={location.id}
-                      className="bg-gray-800/30 rounded-xl overflow-hidden border border-gray-700 opacity-60"
+                      className="bg-gray-800/30 rounded-xl border border-gray-700 opacity-60"
                     >
                       <div className="h-2 bg-gray-600" />
                       <div className="p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="p-2 rounded-lg bg-gray-700">
-                            <Icon className="w-5 h-5 text-gray-400" />
+                        <div className="flex items-center gap-3">
+                          <div className="p-3 rounded-lg bg-gray-700">
+                            <Icon className="w-6 h-6 text-gray-400" />
                           </div>
                           <div className="flex-1">
-                            <h4 className="font-medium text-gray-300">{location.name}</h4>
+                            <h4 className="font-bold text-gray-300 text-lg">{location.name}</h4>
                             <p className="text-sm text-gray-500 capitalize">{location.type}</p>
                           </div>
                           <Lock className="w-5 h-5 text-red-400" />
                         </div>
 
                         {location.unlockRequirements.length > 0 && (
-                          <div className="mt-3 p-2 bg-gray-700/30 rounded-lg">
-                            <p className="text-xs text-gray-400 mb-1">Requirements:</p>
+                          <div className="mt-3 p-3 bg-gray-700/30 rounded-lg">
+                            <p className="text-xs text-gray-400 mb-2 font-medium">Unlock Requirements:</p>
                             <ul className="space-y-1">
-                              {location.unlockRequirements.slice(0, 2).map((req, i) => (
+                              {location.unlockRequirements.slice(0, 3).map((req, i) => (
                                 <li
                                   key={i}
-                                  className={`text-xs flex items-center gap-1 ${
+                                  className={`text-xs flex items-center gap-2 ${
                                     req.met ? 'text-green-400' : 'text-gray-500'
                                   }`}
                                 >
-                                  <span className={`w-1.5 h-1.5 rounded-full ${req.met ? 'bg-green-400' : 'bg-gray-500'}`} />
+                                  <span className={`w-2 h-2 rounded-full ${req.met ? 'bg-green-400' : 'bg-gray-500'}`} />
                                   {req.type}: {String(req.value)}
                                 </li>
                               ))}
