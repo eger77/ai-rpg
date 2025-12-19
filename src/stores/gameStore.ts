@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { persist } from 'zustand/middleware';
+import { enableMapSet } from 'immer';
 import type {
   GameTime,
   Player,
@@ -21,6 +22,9 @@ import type {
   Email,
   EmailState,
 } from '@/types';
+
+// Enable Immer's MapSet plugin for Map/Set support
+enableMapSet();
 
 // =====================================================
 // GAME STATE INTERFACE
