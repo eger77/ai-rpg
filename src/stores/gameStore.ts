@@ -442,7 +442,9 @@ export const useGameStore = create<GameStore>()(
       },
 
       resetGame: () => {
-        set(initialState);
+        set((state) => {
+          Object.assign(state, initialState);
+        });
       },
 
       // ===== TIME MANAGEMENT =====
