@@ -12,7 +12,7 @@ const getDeepSeekClient = () => {
 
   return new OpenAI({
     apiKey,
-    baseURL: 'https://api.deepseek.com',
+    baseURL: 'https://api.deepseek.com/v1',
     dangerouslyAllowBrowser: true, // For client-side usage
   });
 };
