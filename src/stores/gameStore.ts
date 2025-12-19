@@ -152,6 +152,8 @@ interface GameActions {
   getTimeOfDay: () => TimeOfDay;
   isLocationOpen: (locationId: string) => boolean;
   canAfford: (amount: number) => boolean;
+  getLocationsCount: () => number;
+  getNPCsCount: () => number;
 }
 
 type GameStore = GameState & GameActions;
@@ -417,12 +419,47 @@ export const useGameStore = create<GameStore>()(
         try {
           const parsed = JSON.parse(saveData);
           set((state) => {
-            Object.assign(state, parsed);
+            // Manually assign each property to avoid Immer issues
+            state.initialized = parsed.initialized ?? false;
+            state.paused = parsed.paused ?? false;
+            state.gameSpeed = parsed.gameSpeed ?? 1;
+            state.gameTime = parsed.gameTime;
+            state.realTimeRatio = parsed.realTimeRatio ?? 1;
+            state.worldSettings = parsed.worldSettings ?? null;
+            state.player = parsed.player ?? null;
+            state.events = parsed.events ?? [];
+            state.phone = parsed.phone ?? null;
+            state.emailState = parsed.emailState ?? null;
+            state.dialogue = parsed.dialogue ?? null;
+            state.globalFlags = parsed.globalFlags ?? {};
+            state.eventQueue = parsed.eventQueue ?? [];
+            state.totalPlayTime = parsed.totalPlayTime ?? 0;
+
             // Convert Maps back from objects
-            state.npcs = new Map(Object.entries(parsed.npcs || {}));
-            state.locations = new Map(Object.entries(parsed.locations || {}));
-            state.quests = new Map(Object.entries(parsed.quests || {}));
-            state.worldWiki = new Map(Object.entries(parsed.worldWiki || {}));
+            state.npcs.clear();
+            if (parsed.npcs) {
+              Object.entries(parsed.npcs).forEach(([key, value]) => {
+                state.npcs.set(key, value as NPC);
+              });
+            }
+            state.locations.clear();
+            if (parsed.locations) {
+              Object.entries(parsed.locations).forEach(([key, value]) => {
+                state.locations.set(key, value as Location);
+              });
+            }
+            state.quests.clear();
+            if (parsed.quests) {
+              Object.entries(parsed.quests).forEach(([key, value]) => {
+                state.quests.set(key, value as Quest);
+              });
+            }
+            state.worldWiki.clear();
+            if (parsed.worldWiki) {
+              Object.entries(parsed.worldWiki).forEach(([key, value]) => {
+                state.worldWiki.set(key, value as any);
+              });
+            }
           });
         } catch (e) {
           console.error('Failed to load game:', e);
@@ -442,7 +479,33 @@ export const useGameStore = create<GameStore>()(
       },
 
       resetGame: () => {
-        set(initialState);
+        set((state) => {
+          state.initialized = false;
+          state.paused = false;
+          state.gameSpeed = 1;
+          state.gameTime = {
+            day: 1,
+            hour: 8,
+            minute: 0,
+            dayOfWeek: 'monday',
+            season: 'spring',
+            weather: 'sunny',
+          };
+          state.realTimeRatio = 1;
+          state.worldSettings = null;
+          state.player = null;
+          state.npcs = new Map();
+          state.locations = new Map();
+          state.quests = new Map();
+          state.events = [];
+          state.phone = null;
+          state.emailState = null;
+          state.dialogue = null;
+          state.globalFlags = {};
+          state.worldWiki = new Map();
+          state.eventQueue = [];
+          state.totalPlayTime = 0;
+        });
       },
 
       // ===== TIME MANAGEMENT =====
@@ -1268,10 +1331,18 @@ export const useGameStore = create<GameStore>()(
         const state = get();
         return (state.player?.finances.balance ?? 0) >= amount;
       },
+
+      getLocationsCount: () => {
+        return get().locations.size;
+      },
+
+      getNPCsCount: () => {
+        return get().npcs.size;
+      },
     })),
     {
       name: 'ai-rpg-save',
-      version: 2, // Increment this when save format changes
+      version: 3, // Increment this when save format changes
       partialize: (state) => ({
         initialized: state.initialized,
         gameTime: state.gameTime,
@@ -1289,14 +1360,28 @@ export const useGameStore = create<GameStore>()(
       }),
       migrate: (persistedState, version) => {
         // Clear old incompatible saves
-        if (version < 2) {
-          console.log('Clearing old save data (version upgrade)');
+        if (version < 3) {
+          console.log('Clearing old save data (version upgrade to fix Immer compatibility)');
           return {
             initialized: false,
             npcs: {},
             locations: {},
             quests: {},
             worldWiki: {},
+            gameTime: {
+              day: 1,
+              hour: 8,
+              minute: 0,
+              dayOfWeek: 'monday',
+              season: 'spring',
+              weather: 'sunny',
+            },
+            player: null,
+            events: [],
+            phone: null,
+            emailState: null,
+            globalFlags: {},
+            totalPlayTime: 0,
           };
         }
         return persistedState;
@@ -1305,26 +1390,29 @@ export const useGameStore = create<GameStore>()(
         // Convert plain objects back to Maps after rehydration
         if (state) {
           try {
-            if (state.npcs && !(state.npcs instanceof Map)) {
-              state.npcs = new Map(Object.entries(state.npcs));
+            // Cast to any to avoid type issues during rehydration
+            const anyState = state as any;
+            if (anyState.npcs && !(anyState.npcs instanceof Map)) {
+              anyState.npcs = new Map(Object.entries(anyState.npcs));
             }
-            if (state.locations && !(state.locations instanceof Map)) {
-              state.locations = new Map(Object.entries(state.locations));
+            if (anyState.locations && !(anyState.locations instanceof Map)) {
+              anyState.locations = new Map(Object.entries(anyState.locations));
             }
-            if (state.quests && !(state.quests instanceof Map)) {
-              state.quests = new Map(Object.entries(state.quests));
+            if (anyState.quests && !(anyState.quests instanceof Map)) {
+              anyState.quests = new Map(Object.entries(anyState.quests));
             }
-            if (state.worldWiki && !(state.worldWiki instanceof Map)) {
-              state.worldWiki = new Map(Object.entries(state.worldWiki));
+            if (anyState.worldWiki && !(anyState.worldWiki instanceof Map)) {
+              anyState.worldWiki = new Map(Object.entries(anyState.worldWiki));
             }
           } catch (error) {
             console.error('Error rehydrating state, resetting:', error);
-            // Reset to empty Maps on error
-            state.npcs = new Map();
-            state.locations = new Map();
-            state.quests = new Map();
-            state.worldWiki = new Map();
-            state.initialized = false;
+            // Reset to empty Maps on error - cast to any for direct mutation
+            const anyState = state as any;
+            anyState.npcs = new Map();
+            anyState.locations = new Map();
+            anyState.quests = new Map();
+            anyState.worldWiki = new Map();
+            anyState.initialized = false;
           }
         }
       },
