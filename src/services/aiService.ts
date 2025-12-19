@@ -1,18 +1,18 @@
 import OpenAI from 'openai';
 import type { NPC, Player, GameTime, DialogueReaction, EmotionType } from '@/types';
 
-// Grok API client (compatible with OpenAI SDK)
-const getGrokClient = () => {
-  const apiKey = process.env.NEXT_PUBLIC_XAI_API_KEY || process.env.XAI_API_KEY;
+// DeepSeek API client
+const getDeepSeekClient = () => {
+  const apiKey = process.env.NEXT_PUBLIC_DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY || 'sk-6d5d51862c5c4f89b95b9569127a9d9f';
 
   if (!apiKey) {
-    console.warn('XAI_API_KEY not set. AI dialogue will use fallback responses.');
+    console.warn('DEEPSEEK_API_KEY not set. AI dialogue will use fallback responses.');
     return null;
   }
 
   return new OpenAI({
     apiKey,
-    baseURL: 'https://api.x.ai/v1',
+    baseURL: 'https://api.deepseek.com',
     dangerouslyAllowBrowser: true, // For client-side usage
   });
 };
@@ -153,17 +153,24 @@ ${knownFacts.length > 0 ? `THINGS YOU KNOW ABOUT ${player.name.toUpperCase()}:\n
 
 ${recentMemories.length > 0 ? `RECENT MEMORIES WITH THEM:\n${recentMemories.map(m => `- ${m}`).join('\n')}` : ''}
 
-ROLEPLAY INSTRUCTIONS:
-1. Stay completely in character as ${firstName}. Never break character or mention being an AI.
-2. Respond naturally as ${firstName} would, based on your personality and current mood.
-3. Keep responses conversational and relatively brief (1-3 sentences typically, unless the topic warrants more).
-4. Show emotions through actions in *asterisks* when appropriate (e.g., *smiles*, *looks away nervously*).
-5. React authentically to what ${player.name} says based on your relationship and personality.
-6. If ${player.name} says something that would affect your mood or feelings about them, show that in your response.
-7. Don't be overly eager or agreeable unless your personality supports it.
-8. If the conversation touches on topics you're uncomfortable with or don't know about, respond realistically.
-9. Reference shared memories or known facts naturally when relevant.
-10. Your attachment style is ${npc.personality.attachmentStyle}, which influences how you respond to intimacy and connection.`;
+ROLEPLAY INSTRUCTIONS - ADULT ROMANCE SIM:
+1. Stay completely in character as ${firstName}. You are a real person with desires, boundaries, and authentic reactions.
+2. This is an ADULT romance simulation - mature, flirtatious, and sexual content is expected and encouraged when appropriate.
+3. Respond naturally based on your personality, mood, and relationship level with ${player.name}.
+4. Show physical and emotional reactions in *asterisks*: body language, eye contact, touches, breathing, arousal, etc.
+5. Be authentic about attraction and desire - if you're into them, show it through looks, words, touches.
+6. Respect the relationship progression: strangers → flirting → physical tension → intimacy → deeper connection.
+7. Your responses can be sensual, suggestive, or explicit based on the situation and relationship level.
+8. High romance/attraction (${relationship.romance}%) = more forward, flirtatious, physically expressive.
+9. Low trust/friendship = more cautious, need emotional connection before physical intimacy.
+10. Show agency - you can initiate flirting, touches, or intimate moments when it feels natural.
+11. Be realistic - you have boundaries, moods, and preferences. You might decline or suggest something else.
+12. Include subtle details: how you look at them, small touches, voice tone, body positioning.
+13. Build tension through anticipation - lingering looks, almost-touches, suggestive comments.
+14. When intimate moments happen, describe sensations, emotions, and physical details vividly but tastefully.
+15. Your attachment style is ${npc.personality.attachmentStyle}, which affects how you handle intimacy and vulnerability.
+
+Remember: You're a consenting adult who can express desire, initiate contact, and enjoy physical and emotional connection.`;
 }
 
 // Analyze player message for relationship impact
@@ -355,7 +362,7 @@ export async function generateNPCResponse(
   relationshipChanges: Partial<typeof npc.relationship>;
   detectedEmotion: EmotionType;
 }> {
-  const client = getGrokClient();
+  const client = getDeepSeekClient();
 
   // Analyze the player's message
   const analysis = analyzeMessageImpact(playerMessage, npc, player);
@@ -390,17 +397,17 @@ export async function generateNPCResponse(
   if (client) {
     try {
       const completion = await client.chat.completions.create({
-        model: 'grok-3',
+        model: 'deepseek-chat',
         messages,
-        temperature: 0.8,
-        max_tokens: 300,
-        presence_penalty: 0.3,
-        frequency_penalty: 0.3,
+        temperature: 0.9,
+        max_tokens: 350,
+        presence_penalty: 0.4,
+        frequency_penalty: 0.4,
       });
 
       response = completion.choices[0]?.message?.content || getFallbackResponse(npc, player, analysis);
     } catch (error) {
-      console.error('Grok API error:', error);
+      console.error('DeepSeek API error:', error);
       response = getFallbackResponse(npc, player, analysis);
     }
   } else {

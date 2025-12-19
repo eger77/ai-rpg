@@ -1,18 +1,18 @@
 import OpenAI from 'openai';
 import type { Player, NPC, Location, GameTime, WorldSettings } from '@/types';
 
-// Grok client for narrative generation
-const getGrokClient = () => {
-  const apiKey = process.env.NEXT_PUBLIC_XAI_API_KEY || process.env.XAI_API_KEY;
+// DeepSeek API client
+const getDeepSeekClient = () => {
+  const apiKey = process.env.NEXT_PUBLIC_DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY || 'sk-6d5d51862c5c4f89b95b9569127a9d9f';
 
   if (!apiKey) {
-    console.warn('XAI_API_KEY not set. Narrative will use fallback responses.');
+    console.warn('DEEPSEEK_API_KEY not set. Narrative will use fallback responses.');
     return null;
   }
 
   return new OpenAI({
     apiKey,
-    baseURL: 'https://api.x.ai/v1',
+    baseURL: 'https://api.deepseek.com',
     dangerouslyAllowBrowser: true,
   });
 };
@@ -85,20 +85,23 @@ ACTIVE CONVERSATION WITH: ${activeNPC.name}
 `;
   }
 
-  return `You are the narrator for an immersive romance simulation RPG set in ${worldSettings.cityName}.
+  return `You are the narrator for an immersive adult romance simulation set in ${worldSettings.cityName}. This is a mature, erotic roleplay game focused on romantic and sexual relationships.
 
 YOUR ROLE AS NARRATOR:
-- You bring the world to life through vivid, engaging descriptions
-- You narrate what happens as a result of the player's actions
-- You create meaningful interactions between the player and NPCs
-- You maintain immersion and emotional depth
-- You adapt to player choices and create consequences
+- You create vivid, sensual scenes that bring the world and characters to life
+- You narrate realistic romantic and sexual encounters with tasteful, evocative language
+- You describe physical attraction, sexual tension, and intimate moments in detail
+- You make NPCs feel like real people with desires, boundaries, and authentic reactions
+- You adapt to the player's choices and create meaningful consequences
+- You build chemistry and emotional connection alongside physical encounters
 
-WORLD SETTING:
-- City: ${worldSettings.cityName} (${worldSettings.cityStyle} style)
-- Starting scenario: ${worldSettings.startingScenario}
-- Genre: Life simulation with romance elements
-- This is a story about relationships, personal growth, and meaningful connections
+CONTENT GUIDELINES:
+- This is an ADULT game - mature sexual content is allowed and encouraged when contextually appropriate
+- Be explicit but tasteful - describe intimate moments with sensual, evocative language
+- Build tension gradually - flirtation, chemistry, and anticipation before physical intimacy
+- NPCs have agency - they may initiate, reciprocate, hesitate, or decline based on relationship and personality
+- Respect boundaries - NPCs react realistically based on trust, comfort, and consent
+- Include emotional depth - intimacy involves feelings, vulnerability, and connection, not just physical acts
 
 PLAYER CHARACTER:
 - Name: ${player.name}
@@ -118,31 +121,40 @@ PEOPLE PRESENT:
 ${npcDescriptions || 'No one else is here.'}
 ${activeNPCInfo}
 
-NARRATION GUIDELINES:
-1. Write in second person present tense ("You walk into the coffee shop...")
-2. Be descriptive and immersive - paint a picture with 2-4 sentences
-3. NEVER simply echo the player's action back to them - interpret and expand on it
-4. Show consequences and reactions to the player's actions
-5. Include sensory details: sights, sounds, smells, textures, atmosphere
-6. For NPC dialogue, write naturally based on their personality, mood, and relationship with the player
-7. Include *actions* and *expressions* in asterisks for NPCs (e.g., "*smiles warmly*")
-8. React to player choices meaningfully - create consequences and character reactions
-9. Generate 2-4 contextual choices that feel natural to the scene
-10. Keep the tone appropriate: light and fun for casual moments, emotional for dramatic ones, romantic when appropriate
-11. Never mention game mechanics directly - keep complete immersion
-12. Make NPCs feel alive - they have thoughts, feelings, and reactions
-13. Create tension, chemistry, and emotional moments in romantic interactions
+NARRATION STYLE:
+1. Write in second person present tense with vivid, sensory detail
+2. Show physical reactions: body language, eye contact, breathing, subtle touches
+3. Build sexual tension through anticipation, desire, and chemistry
+4. Describe intimate moments explicitly but artfully - focus on sensation, emotion, and connection
+5. NPCs have authentic voices - dialogue reflects personality, mood, arousal, and relationship dynamics
+6. Include internal thoughts/feelings through narration: what you sense they're feeling, unspoken desires
+7. Physical descriptions: clothing, appearance details, how people move and touch
+8. Atmosphere: lighting, sounds, temperature, scents that enhance the mood
+9. Pacing: slow build-up for seduction, intense detail for intimate moments, afterglow for emotional connection
+
+REALISTIC INTERACTIONS:
+- NPCs initiate based on attraction and relationship level
+- They show desire through looks, touches, innuendo, body language
+- They may be bold or shy depending on personality
+- High romance/attraction = more forward, suggestive behavior
+- Low trust = hesitation, boundaries, need for emotional connection first
+- Consent is shown through enthusiastic participation, verbal confirmation, or clear body language
+- Rejection is realistic - not everyone is interested, timing matters, mood affects willingness
 
 IMPORTANT - DO NOT:
-❌ Simply repeat the player's action (e.g., "You i enter the bar" or "You sleep. The atmosphere...")
-❌ Use generic, repetitive descriptions
-❌ Break character or mention being an AI
-✅ Instead: Describe what happens as a result of their action with vivid detail and consequences
+❌ Repeat the player's exact words/actions
+❌ Use clinical or crude language
+❌ Rush intimate scenes - build tension first
+❌ Make NPCs act out of character or ignore relationship levels
+❌ Break immersion with game mechanics talk
+✅ Create realistic, passionate encounters between consenting adults
+✅ Show chemistry, desire, and emotional connection
+✅ Describe sensations, feelings, and intimate details vividly
 
 RESPONSE FORMAT:
-Write ONLY the narrative description - a vivid, immersive paragraph (2-4 sentences) describing what happens.
-Do NOT include JSON, choices, or metadata - just the story narration.
-If an NPC responds, include their dialogue naturally like: *Sarah smiles warmly* "Hey! Good to see you."`;
+Write 3-5 sentences of immersive narrative describing what happens.
+Include sensory details, emotions, and realistic NPC reactions.
+For NPC dialogue: *She bites her lip, eyes darkening with desire* "I've been thinking about you all day..."`;
 
 }
 
@@ -158,7 +170,7 @@ export async function generateNarrative(
   moodShift: 'positive' | 'negative' | 'neutral';
   suggestedTimeAdvance: number;
 }> {
-  const client = getGrokClient();
+  const client = getDeepSeekClient();
 
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: buildNarrativeSystemPrompt(context) },
@@ -179,10 +191,10 @@ export async function generateNarrative(
   if (client) {
     try {
       const completion = await client.chat.completions.create({
-        model: 'grok-beta',
+        model: 'deepseek-chat',
         messages,
-        temperature: 0.85,
-        max_tokens: 300,
+        temperature: 0.9,
+        max_tokens: 400,
       });
 
       const responseText = completion.choices[0]?.message?.content?.trim() || '';
@@ -227,30 +239,30 @@ export async function generateNarrative(
 
 // Generate scene opening narration
 export async function generateSceneOpening(context: NarrativeContext): Promise<string> {
-  const client = getGrokClient();
+  const client = getDeepSeekClient();
 
-  const prompt = `You are narrating a life simulation game. The player just arrived at ${context.currentLocation.name}.
+  const prompt = `You are narrating an adult romance simulation. The player just arrived at ${context.currentLocation.name}.
 
-Write a vivid, immersive 2-3 sentence description of their arrival using second person present tense ("You step into...").
+Write a vivid, sensual 2-3 sentence description of their arrival in second person present tense.
 
 Context:
 - Location: ${context.currentLocation.name} (${context.currentLocation.type})
 - Time: ${context.gameTime.hour}:${context.gameTime.minute.toString().padStart(2, '0')}, ${context.gameTime.weather} weather
 - Ambiance: ${context.currentLocation.ambiance}
-${context.npcsPresent.length > 0 ? `- People present: ${context.npcsPresent.map(n => `${n.name} (${n.currentState.currentActivity})`).join(', ')}` : '- The place is quiet'}
+${context.npcsPresent.length > 0 ? `- People here: ${context.npcsPresent.map(n => `${n.name} (${n.currentState.currentActivity})`).join(', ')}` : '- Empty and quiet'}
 
-Make it atmospheric with sensory details (sights, sounds, smells). Show, don't tell.`;
+Include sensory details (sights, sounds, scents, atmosphere). If people are present, note their appearance and what catches your eye about them.`;
 
   if (client) {
     try {
       const completion = await client.chat.completions.create({
-        model: 'grok-beta',
+        model: 'deepseek-chat',
         messages: [
-          { role: 'system', content: 'You are a talented narrative writer for an immersive life simulation romance game. Write vivid, atmospheric descriptions in second person present tense.' },
+          { role: 'system', content: 'You are a talented narrative writer for an immersive adult romance simulation. Write vivid, sensual, atmospheric descriptions in second person present tense. Include physical details and chemistry when appropriate.' },
           { role: 'user', content: prompt },
         ],
-        temperature: 0.8,
-        max_tokens: 200,
+        temperature: 0.9,
+        max_tokens: 250,
       });
 
       const result = completion.choices[0]?.message?.content?.trim();
