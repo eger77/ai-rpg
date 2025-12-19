@@ -21,7 +21,7 @@ import { generateInitialNPCs } from '@/systems/npcGenerator';
 type GameScreen = 'loading' | 'title' | 'character_creation' | 'game';
 
 export default function Home() {
-  const { initialized, player, advanceTime, moveToLocation, locations, npcs, addLocation, addNPC, paused } = useGameStore();
+  const { initialized, player, advanceTime, moveToLocation, locations, npcs, addLocation, addNPC, paused, getLocationsCount, getNPCsCount } = useGameStore();
   const [screen, setScreen] = useState<GameScreen>('loading');
 
   // UI State
@@ -52,17 +52,20 @@ export default function Home() {
 
   // Ensure locations and NPCs exist when game loads
   useEffect(() => {
-    if (initialized && player && locations.size === 0) {
+    const locCount = getLocationsCount();
+    const npcCount = getNPCsCount();
+
+    if (initialized && player && locCount === 0) {
       console.log('No locations found, adding starter locations...');
       const starterLocations = getStarterLocations();
       starterLocations.forEach((location) => addLocation(location));
     }
-    if (initialized && player && npcs.size === 0) {
+    if (initialized && player && npcCount === 0) {
       console.log('No NPCs found, generating initial NPCs...');
       const initialNPCs = generateInitialNPCs(5);
       initialNPCs.forEach((npc) => addNPC(npc));
     }
-  }, [initialized, player, locations.size, npcs.size, addLocation, addNPC]);
+  }, [initialized, player, getLocationsCount, getNPCsCount, addLocation, addNPC]);
 
   // Game time tick (advance time periodically)
   useEffect(() => {
