@@ -551,7 +551,7 @@ export const useGameStore = create<GameStore>()(
           }
 
           // Update NPC states
-          state.npcs.forEach((npc, id) => {
+          Array.from(state.npcs.entries()).forEach(([id, npc]) => {
             // Update location based on schedule
             const currentSchedule = npc.defaultSchedule.find((s) => {
               const matchesDay =
@@ -801,7 +801,7 @@ export const useGameStore = create<GameStore>()(
 
       getNPCsAtLocation: (locationId) => {
         const npcs: NPC[] = [];
-        get().npcs.forEach((npc) => {
+        Array.from(get().npcs.values()).forEach((npc) => {
           if (npc.currentState.currentLocationId === locationId) {
             npcs.push(npc);
           }
@@ -815,7 +815,7 @@ export const useGameStore = create<GameStore>()(
 
         // Get NPCs the player knows (has had contact with)
         const knownNPCs: NPC[] = [];
-        state.npcs.forEach((npc) => {
+        Array.from(state.npcs.values()).forEach((npc) => {
           if (npc.relationship.totalInteractions > 0 || npc.relationship.friendship > 10) {
             knownNPCs.push(npc);
           }
