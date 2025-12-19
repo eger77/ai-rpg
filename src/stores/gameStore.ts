@@ -551,7 +551,10 @@ export const useGameStore = create<GameStore>()(
           }
 
           // Update NPC states
-          Array.from(state.npcs.entries()).forEach(([id, npc]) => {
+          Array.from(state.npcs.keys()).forEach((id) => {
+            const npc = state.npcs.get(id);
+            if (!npc) return;
+
             // Update location based on schedule
             const currentSchedule = npc.defaultSchedule.find((s) => {
               const matchesDay =
@@ -564,29 +567,16 @@ export const useGameStore = create<GameStore>()(
             });
 
             if (currentSchedule) {
-              state.npcs.set(id, {
-                ...npc,
-                currentState: {
-                  ...npc.currentState,
-                  currentLocationId: currentSchedule.locationId,
-                  currentActivity: currentSchedule.activity,
-                  availability: currentSchedule.interruptible ? 'available' : 'busy',
-                },
-              });
+              npc.currentState.currentLocationId = currentSchedule.locationId;
+              npc.currentState.currentActivity = currentSchedule.activity;
+              npc.currentState.availability = currentSchedule.interruptible ? 'available' : 'busy';
             }
 
             // Decay relationship if neglected
-            const relationship = npc.relationship;
-            if (relationship.daysSinceContact > 3) {
-              state.npcs.set(id, {
-                ...npc,
-                relationship: {
-                  ...relationship,
-                  friendship: Math.max(0, relationship.friendship - 0.5),
-                  romance: Math.max(0, relationship.romance - 1),
-                  neglectWarning: relationship.daysSinceContact > 5,
-                },
-              });
+            if (npc.relationship.daysSinceContact > 3) {
+              npc.relationship.friendship = Math.max(0, npc.relationship.friendship - 0.5);
+              npc.relationship.romance = Math.max(0, npc.relationship.romance - 1);
+              npc.relationship.neglectWarning = npc.relationship.daysSinceContact > 5;
             }
           });
 
@@ -733,7 +723,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const npc = state.npcs.get(npcId);
           if (npc) {
-            state.npcs.set(npcId, { ...npc, ...updates });
+            Object.assign(npc, updates);
           }
         });
       },
@@ -742,10 +732,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const npc = state.npcs.get(npcId);
           if (npc) {
-            state.npcs.set(npcId, {
-              ...npc,
-              relationship: { ...npc.relationship, ...updates },
-            });
+            Object.assign(npc.relationship, updates);
           }
         });
       },
@@ -755,10 +742,7 @@ export const useGameStore = create<GameStore>()(
           const npc = state.npcs.get(npcId);
           if (npc) {
             const newMemory = { ...memory, id: generateId() };
-            state.npcs.set(npcId, {
-              ...npc,
-              memories: [...npc.memories, newMemory],
-            });
+            npc.memories.push(newMemory);
           }
         });
       },
@@ -767,10 +751,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const npc = state.npcs.get(npcId);
           if (npc) {
-            state.npcs.set(npcId, {
-              ...npc,
-              appearance: { ...npc.appearance, portraitUrl },
-            });
+            npc.appearance.portraitUrl = portraitUrl;
           }
         });
       },
@@ -787,10 +768,7 @@ export const useGameStore = create<GameStore>()(
               importance: 'minor' as const,
               canReference,
             };
-            state.npcs.set(npcId, {
-              ...npc,
-              knownFacts: [...npc.knownFacts, newFact],
-            });
+            npc.knownFacts.push(newFact);
           }
         });
       },
@@ -915,7 +893,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const location = state.locations.get(locationId);
           if (location) {
-            state.locations.set(locationId, { ...location, ...updates });
+            Object.assign(location, updates);
           }
         });
       },
@@ -924,7 +902,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const location = state.locations.get(locationId);
           if (location) {
-            state.locations.set(locationId, { ...location, unlocked: true });
+            location.unlocked = true;
           }
           if (state.player && !state.player.unlockedLocations.includes(locationId)) {
             state.player.unlockedLocations.push(locationId);
@@ -948,7 +926,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const quest = state.quests.get(questId);
           if (quest) {
-            state.quests.set(questId, { ...quest, ...updates });
+            Object.assign(quest, updates);
           }
         });
       },
@@ -957,16 +935,15 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const quest = state.quests.get(questId);
           if (quest) {
-            const updatedObjectives = quest.objectives.map((obj) =>
-              obj.id === objectiveId ? { ...obj, completed: true } : obj
-            );
-            const allComplete = updatedObjectives.every((obj) => obj.completed);
-            state.quests.set(questId, {
-              ...quest,
-              objectives: updatedObjectives,
-              status: allComplete ? 'completed' : quest.status,
-              completedOnDay: allComplete ? state.gameTime.day : undefined,
-            });
+            const objective = quest.objectives.find((obj) => obj.id === objectiveId);
+            if (objective) {
+              objective.completed = true;
+            }
+            const allComplete = quest.objectives.every((obj) => obj.completed);
+            if (allComplete) {
+              quest.status = 'completed';
+              quest.completedOnDay = state.gameTime.day;
+            }
           }
         });
       },
@@ -975,7 +952,7 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const quest = state.quests.get(questId);
           if (quest) {
-            state.quests.set(questId, { ...quest, status: 'failed' });
+            quest.status = 'failed';
           }
         });
       },
@@ -1030,10 +1007,8 @@ export const useGameStore = create<GameStore>()(
           // Reset days since contact
           const npc = state.npcs.get(npcId);
           if (npc) {
-            state.npcs.set(npcId, {
-              ...npc,
-              relationship: { ...npc.relationship, daysSinceContact: 0, neglectWarning: false },
-            });
+            npc.relationship.daysSinceContact = 0;
+            npc.relationship.neglectWarning = false;
           }
         });
       },
@@ -1154,10 +1129,8 @@ export const useGameStore = create<GameStore>()(
           // Reset days since contact
           const npc = state.npcs.get(npcId);
           if (npc) {
-            state.npcs.set(npcId, {
-              ...npc,
-              relationship: { ...npc.relationship, daysSinceContact: 0, neglectWarning: false },
-            });
+            npc.relationship.daysSinceContact = 0;
+            npc.relationship.neglectWarning = false;
           }
         });
       },
