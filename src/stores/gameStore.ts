@@ -112,6 +112,7 @@ interface GameActions {
   updateLocation: (locationId: string, updates: Partial<Location>) => void;
   unlockLocation: (locationId: string) => void;
   getLocation: (locationId: string) => Location | undefined;
+  checkLocationAccess: (locationId: string) => { allowed: boolean; reason?: string; suggestions?: string[] };
 
   // Quest Actions
   addQuest: (quest: Quest) => void;
@@ -1012,6 +1013,119 @@ export const useGameStore = create<GameStore>()(
 
       getLocation: (locationId) => {
         return get().locations.get(locationId);
+      },
+
+      checkLocationAccess: (locationId) => {
+        const state = get();
+        const location = state.locations.get(locationId);
+        const player = state.player;
+
+        if (!location || !player) {
+          return { allowed: false, reason: 'Location or player not found' };
+        }
+
+        // Check if location is unlocked
+        if (!location.unlocked && !player.unlockedLocations.includes(locationId)) {
+          return { allowed: false, reason: 'This location is locked' };
+        }
+
+        // Check if location is open (time-based)
+        if (location.openHours !== 'always') {
+          const hour = state.gameTime.hour;
+          if (hour < location.openHours.open || hour >= location.openHours.close) {
+            return {
+              allowed: false,
+              reason: `This location is closed. Hours: ${location.openHours.open}:00 - ${location.openHours.close}:00`,
+            };
+          }
+        }
+
+        // Check if location is closed on this day
+        if (location.closedDays.includes(state.gameTime.dayOfWeek)) {
+          return {
+            allowed: false,
+            reason: `This location is closed on ${state.gameTime.dayOfWeek}s`,
+          };
+        }
+
+        // Check dress code / formality level
+        if (location.minFormalityLevel) {
+          let totalFormality = 0;
+          let itemCount = 0;
+
+          const outfit = player.currentOutfit;
+
+          if (outfit.hat) {
+            totalFormality += outfit.hat.formalityLevel;
+            itemCount++;
+          }
+          if (outfit.top) {
+            totalFormality += outfit.top.formalityLevel;
+            itemCount++;
+          }
+          if (outfit.bottom) {
+            totalFormality += outfit.bottom.formalityLevel;
+            itemCount++;
+          }
+          if (outfit.shoes) {
+            totalFormality += outfit.shoes.formalityLevel;
+            itemCount++;
+          }
+          if (outfit.outerwear) {
+            totalFormality += outfit.outerwear.formalityLevel;
+            itemCount++;
+          }
+          if (outfit.accessory1) {
+            totalFormality += outfit.accessory1.formalityLevel;
+            itemCount++;
+          }
+          if (outfit.accessory2) {
+            totalFormality += outfit.accessory2.formalityLevel;
+            itemCount++;
+          }
+
+          const avgFormality = itemCount > 0 ? Math.round(totalFormality / itemCount) : 0;
+
+          if (avgFormality < location.minFormalityLevel) {
+            const suggestions: string[] = [];
+            const diff = location.minFormalityLevel - avgFormality;
+
+            suggestions.push(
+              `Your outfit is not formal enough. You need ${diff} more formality points.`
+            );
+
+            if (location.minFormalityLevel >= 8) {
+              suggestions.push('Try wearing: Suit, blazer, or formal dress');
+              suggestions.push('Dress pants or formal skirt');
+              suggestions.push('Polished dress shoes');
+            } else if (location.minFormalityLevel >= 6) {
+              suggestions.push('Try wearing: Button-up shirt or professional blouse');
+              suggestions.push('Slacks or professional skirt');
+              suggestions.push('Dress shoes');
+            } else if (location.minFormalityLevel >= 4) {
+              suggestions.push('Try wearing: Collared shirt or nice blouse');
+              suggestions.push('Chinos or dress pants');
+              suggestions.push('Loafers or dress shoes');
+            }
+
+            return {
+              allowed: false,
+              reason: `Dress code violation: This venue requires more formal attire (formality ${location.minFormalityLevel}/10)`,
+              suggestions,
+            };
+          }
+        }
+
+        // Check admission cost
+        if (location.admissionCost && player.finances.balance < location.admissionCost) {
+          return {
+            allowed: false,
+            reason: `Insufficient funds. Admission costs $${location.admissionCost}`,
+          };
+        }
+
+        // All checks passed
+        return { allowed: true };
       },
 
       // ===== QUEST ACTIONS =====
