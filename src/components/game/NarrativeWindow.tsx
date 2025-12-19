@@ -565,7 +565,35 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
     return `${hour}:${time.minute.toString().padStart(2, '0')} ${ampm}`;
   };
 
-  if (!player || !currentLocation) return null;
+  // Debug: Show helpful message if location not found
+  if (!player) {
+    return (
+      <div className="flex flex-col h-full bg-gray-900 rounded-2xl border border-gray-700 items-center justify-center">
+        <p className="text-gray-400">Loading player data...</p>
+      </div>
+    );
+  }
+
+  if (!currentLocation) {
+    return (
+      <div className="flex flex-col h-full bg-gray-900 rounded-2xl border border-gray-700 items-center justify-center p-8">
+        <MapPin className="w-12 h-12 text-gray-600 mb-4" />
+        <p className="text-gray-400 text-center mb-4">
+          No location found. Setting up your starting location...
+        </p>
+        <p className="text-gray-500 text-sm text-center mb-4">
+          Location ID: {player.currentLocationId}<br />
+          Available locations: {locations.size}
+        </p>
+        <button
+          onClick={onOpenMap}
+          className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-medium"
+        >
+          Open Map
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-gray-900 rounded-2xl border border-gray-700 overflow-hidden">

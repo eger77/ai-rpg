@@ -15,11 +15,13 @@ import { ChatUI } from '@/components/dialogue/ChatUI';
 import { QuestsUI } from '@/components/game/QuestsUI';
 import type { NPC, Location } from '@/types';
 import { Sparkles, Heart } from 'lucide-react';
+import { getStarterLocations } from '@/data/locations';
+import { generateInitialNPCs } from '@/systems/npcGenerator';
 
 type GameScreen = 'loading' | 'title' | 'character_creation' | 'game';
 
 export default function Home() {
-  const { initialized, player, advanceTime, moveToLocation } = useGameStore();
+  const { initialized, player, advanceTime, moveToLocation, locations, npcs, addLocation, addNPC, paused } = useGameStore();
   const [screen, setScreen] = useState<GameScreen>('loading');
 
   // UI State
@@ -48,9 +50,23 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [initialized, player]);
 
+  // Ensure locations and NPCs exist when game loads
+  useEffect(() => {
+    if (initialized && player && locations.size === 0) {
+      console.log('No locations found, adding starter locations...');
+      const starterLocations = getStarterLocations();
+      starterLocations.forEach((location) => addLocation(location));
+    }
+    if (initialized && player && npcs.size === 0) {
+      console.log('No NPCs found, generating initial NPCs...');
+      const initialNPCs = generateInitialNPCs(5);
+      initialNPCs.forEach((npc) => addNPC(npc));
+    }
+  }, [initialized, player, locations.size, npcs.size, addLocation, addNPC]);
+
   // Game time tick (advance time periodically)
   useEffect(() => {
-    if (screen !== 'game' || !initialized) return;
+    if (screen !== 'game' || !initialized || paused) return;
 
     const interval = setInterval(() => {
       // Advance 1 minute every 2 seconds of real time
@@ -58,7 +74,7 @@ export default function Home() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [screen, initialized, advanceTime]);
+  }, [screen, initialized, advanceTime, paused]);
 
   // Loading Screen
   if (screen === 'loading') {
