@@ -21,6 +21,9 @@ import {
   Dumbbell,
   Building,
   Search,
+  Map,
+  List,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface MapUIProps {
@@ -69,11 +72,14 @@ const LOCATION_COLORS: Record<string, string> = {
 };
 
 export function MapUI({ isOpen, onClose, onSelectLocation, onTravelTo }: MapUIProps) {
-  const { player, locations, gameTime, getNPCsAtLocation } = useGameStore();
+  const { player, locations, gameTime, getNPCsAtLocation, worldSettings } = useGameStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<string | 'all'>('all');
+  const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
 
   if (!isOpen || !player) return null;
+
+  const cityMapUrl = worldSettings?.cityMapUrl;
 
   const allLocations = Array.from(locations.values());
 
@@ -123,14 +129,40 @@ export function MapUI({ isOpen, onClose, onSelectLocation, onTravelTo }: MapUIPr
         <div className="bg-gradient-to-r from-blue-600 to-cyan-600 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <MapPin className="w-6 h-6 text-white" />
-            <h2 className="text-xl font-bold text-white">City Map</h2>
+            <div>
+              <h2 className="text-xl font-bold text-white">
+                {worldSettings?.cityName || 'City'} Map
+              </h2>
+              {worldSettings?.cityStyle && (
+                <p className="text-xs text-blue-100 capitalize">{worldSettings.cityStyle} city</p>
+              )}
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5 text-white" />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* View Mode Toggle */}
+            <div className="flex bg-white/20 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('map')}
+                className={`p-2 rounded ${viewMode === 'map' ? 'bg-white/30' : ''} transition-colors`}
+                title="Map View"
+              >
+                <Map className="w-4 h-4 text-white" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded ${viewMode === 'list' ? 'bg-white/30' : ''} transition-colors`}
+                title="List View"
+              >
+                <List className="w-4 h-4 text-white" />
+              </button>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
         </div>
 
         {/* Current Location Banner */}
@@ -182,6 +214,63 @@ export function MapUI({ isOpen, onClose, onSelectLocation, onTravelTo }: MapUIPr
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
+          {/* Visual Map View */}
+          {viewMode === 'map' && (
+            <div className="mb-6">
+              {cityMapUrl ? (
+                <div className="relative rounded-xl overflow-hidden border border-gray-700">
+                  <img
+                    src={cityMapUrl}
+                    alt={`${worldSettings?.cityName || 'City'} Map`}
+                    className="w-full h-64 object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-gray-900/80 to-transparent" />
+                  <div className="absolute bottom-0 left-0 right-0 p-4">
+                    <h3 className="text-white font-bold text-lg">{worldSettings?.cityName || 'City'}</h3>
+                    <p className="text-gray-300 text-sm">
+                      {unlockedLocations.length} locations available • {lockedLocations.length} locked
+                    </p>
+                  </div>
+                  {/* Location markers on map */}
+                  <div className="absolute inset-0 flex flex-wrap items-center justify-center gap-4 p-8">
+                    {unlockedLocations.slice(0, 6).map((location, index) => {
+                      const Icon = LOCATION_ICONS[location.type] || Building;
+                      const colorClass = LOCATION_COLORS[location.type] || 'from-gray-500 to-gray-600';
+                      const isCurrentLocation = player.currentLocationId === location.id;
+                      // Position markers in different spots
+                      const positions = [
+                        'top-4 left-4', 'top-4 right-4',
+                        'top-1/3 left-1/4', 'top-1/3 right-1/4',
+                        'bottom-16 left-1/3', 'bottom-16 right-1/3',
+                      ];
+                      return (
+                        <button
+                          key={location.id}
+                          onClick={() => onSelectLocation(location)}
+                          className={`absolute ${positions[index]} group`}
+                          title={location.name}
+                        >
+                          <div className={`p-2 rounded-full bg-gradient-to-br ${colorClass} shadow-lg ${isCurrentLocation ? 'ring-2 ring-white ring-offset-2 ring-offset-gray-900' : ''} hover:scale-110 transition-transform`}>
+                            <Icon className="w-4 h-4 text-white" />
+                          </div>
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-1 bg-gray-900/90 rounded text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                            {location.name}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-gray-700 bg-gradient-to-br from-blue-900/30 to-purple-900/30 p-8 text-center">
+                  <ImageIcon className="w-16 h-16 mx-auto text-gray-600 mb-4" />
+                  <p className="text-gray-400 mb-2">No map image generated yet</p>
+                  <p className="text-gray-500 text-sm">City map will be generated during character creation</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Unlocked Locations */}
           <div className="mb-8">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
