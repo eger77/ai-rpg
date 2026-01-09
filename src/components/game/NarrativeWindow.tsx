@@ -28,9 +28,20 @@ import {
 interface NarrativeWindowProps {
   onViewNPC: (npc: NPC) => void;
   onOpenMap: () => void;
+  onOpenPhone: () => void;
+  onOpenInventory: () => void;
+  onOpenFinances: () => void;
+  onOpenQuests: () => void;
 }
 
-export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) {
+export function NarrativeWindow({
+  onViewNPC,
+  onOpenMap,
+  onOpenPhone,
+  onOpenInventory,
+  onOpenFinances,
+  onOpenQuests,
+}: NarrativeWindowProps) {
   const {
     player,
     gameTime,
@@ -39,6 +50,7 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
     worldSettings,
     advanceTime,
     updatePlayer,
+    updatePlayerStats,
     updateNPCRelationship,
     addNPCMemory,
     addKnownFact,
@@ -46,6 +58,8 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
     saveGame,
     loadGame,
     quests,
+    addQuest,
+    completeQuestObjective,
     getNPCsAtLocation,
   } = useGameStore();
 
@@ -180,6 +194,15 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
       });
     }
 
+    // Work actions if at an office/work-like location
+    if (player && (loc.type === 'office' || loc.type === 'work')) {
+      defaultChoices.push({
+        id: 'work_project',
+        text: 'Work on a project',
+        type: 'action',
+      });
+    }
+
     defaultChoices.push({ id: 'look_around', text: 'Look around', type: 'action' });
     defaultChoices.push({ id: 'leave', text: 'Go somewhere else', type: 'leave' });
 
@@ -284,6 +307,30 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
       return;
     }
 
+    if (lower === 'phone' || lower === 'messages' || lower === 'email') {
+      onOpenPhone();
+      addSystemMessage('Opening phone…');
+      return;
+    }
+
+    if (lower === 'inventory') {
+      onOpenInventory();
+      addSystemMessage('Opening inventory…');
+      return;
+    }
+
+    if (lower === 'money' || lower === 'finances') {
+      onOpenFinances();
+      addSystemMessage('Opening finances…');
+      return;
+    }
+
+    if (lower === 'quests') {
+      onOpenQuests();
+      addSystemMessage('Opening quests…');
+      return;
+    }
+
     if (lower === 'stats') {
       addSystemMessage(
         `Stats — Energy ${Math.round(player.energy)}% | Mood ${Math.round(player.mood)}% | Stress ${Math.round(player.stress)}% | Hygiene ${Math.round(player.hygiene)}% | Hunger ${Math.round(player.hunger)}% | $${player.finances.balance.toLocaleString()}`
@@ -300,7 +347,8 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
       return;
     }
 
-    if (lower === 'quests') {
+    // (quests UI opens above; keep textual status via "quests list")
+    if (lower === 'quests list') {
       const active = Array.from(quests.values()).filter((q) => q.status === 'active');
       addSystemMessage(active.length ? `Active quests:\n${active.map((q) => `- ${q.title}`).join('\n')}` : 'No active quests.');
       return;
@@ -469,6 +517,17 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
       gameTime,
       conversationHistory
     );
+
+    // Complete "talk once" objective if present
+    const questId = `meet_${activeNPC.id}`;
+    const q = useGameStore.getState().quests.get(questId);
+    if (q && q.status === 'active') {
+      const obj = q.objectives.find((o) => o.id === 'talk_once' && !o.completed);
+      if (obj) {
+        completeQuestObjective(questId, 'talk_once');
+        addSystemMessage(`✅ Objective completed: Talked with ${activeNPC.name.split(' ')[0]}`);
+      }
+    }
 
     // Add NPC response
     const npcMsgId = makeMessageId(`npc_${activeNPC.id}`);
@@ -680,6 +739,77 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
       return;
     }
 
+    // Detailed location activities (apply full LocationActivity effects when selected)
+    if (choice.id.startsWith('activity_') && player && currentLocation) {
+      const activityId = choice.id.replace('activity_', '');
+      const activity = currentLocation.availableActivities.find((a) => a.id === activityId);
+      if (activity) {
+        // Requirements
+        if (activity.moneyCost > 0 && player.finances.balance < activity.moneyCost) {
+          addSystemMessage("You can't afford that right now.");
+          return;
+        }
+        if (activity.energyCost > 0 && player.energy < activity.energyCost) {
+          addSystemMessage("You're too exhausted for that.");
+          return;
+        }
+        if (activity.requiresSkillLevel) {
+          const { skill, level } = activity.requiresSkillLevel;
+          if (player.stats[skill] < level) {
+            addSystemMessage(`Requires ${skill} ${level}+.`);
+            return;
+          }
+        }
+        if (activity.requiresItem) {
+          const has = player.inventory.some((it) => it.id === activity.requiresItem && it.quantity > 0);
+          if (!has) {
+            addSystemMessage(`You need: ${activity.requiresItem}.`);
+            return;
+          }
+        }
+
+        // Time
+        advanceTime(activity.duration);
+
+        // Money
+        if (activity.moneyCost > 0) {
+          updatePlayer({ finances: { ...player.finances, balance: player.finances.balance - activity.moneyCost } });
+        }
+
+        // Energy/mood/stress
+        updatePlayer({
+          energy: clamp01(player.energy - activity.energyCost),
+          mood: activity.moodChange ? clamp01(player.mood + activity.moodChange) : player.mood,
+          stress: activity.stressChange ? clamp01(player.stress + activity.stressChange) : player.stress,
+        });
+
+        // Stat gains
+        if (activity.statChanges) {
+          const nextStats = { ...player.stats };
+          (Object.keys(activity.statChanges) as Array<keyof typeof nextStats>).forEach((k) => {
+            const delta = activity.statChanges?.[k];
+            if (typeof delta === 'number') nextStats[k] = clamp01(nextStats[k] + delta);
+          });
+          updatePlayerStats(nextStats);
+        }
+
+        // Narration
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: makeMessageId(`activity_${activity.id}`),
+            type: 'narration',
+            content: `You ${activity.name.toLowerCase()}.`,
+            timestamp: { ...gameTime },
+          },
+        ]);
+
+        // Refresh choices
+        setCurrentChoices(buildDefaultChoices(currentLocation, npcsHere));
+        return;
+      }
+    }
+
     // Date planning (minimal system)
     if (choice.id === 'date_plan' && activeNPC) {
       const formality = getOutfitFormality();
@@ -803,6 +933,99 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
       return;
     }
 
+    // Work & career actions (basic)
+    if (choice.id === 'work_project' && player) {
+      const projects = player.career.workProjects || [];
+      if (projects.length === 0) {
+        addSystemMessage('No active work projects right now.');
+        return;
+      }
+      const p = projects[0];
+      setCurrentChoices([
+        { id: 'work_do', text: `Work on "${p.name}" (-30 energy, +10% progress, 90m)`, type: 'action' },
+        { id: 'work_help', text: 'Ask a colleague for help (+20% progress, 30m)', type: 'action' },
+        { id: 'work_late', text: 'Stay late (-40 energy, +15% progress, 120m)', type: 'action' },
+        { id: 'work_present', text: 'Present early (risky if <80%)', type: 'action' },
+      ]);
+      return;
+    }
+
+    if (choice.id.startsWith('work_') && player) {
+      const projects = player.career.workProjects || [];
+      if (projects.length === 0) return;
+      const p = projects[0];
+
+      const updateProject = (progressDelta: number) => {
+        const next = projects.map((proj) =>
+          proj.id === p.id ? { ...proj, progress: Math.max(0, Math.min(100, proj.progress + progressDelta)) } : proj
+        );
+        updatePlayer({ career: { ...player.career, workProjects: next } });
+      };
+
+      if (choice.id === 'work_do') {
+        if (player.energy < 30) {
+          addSystemMessage("You're too tired to do focused work.");
+          return;
+        }
+        updateProject(10);
+        updatePlayer({
+          energy: clamp01(player.energy - 30),
+          stress: clamp01(player.stress + 10),
+        });
+        advanceTime(90);
+        addSystemMessage('You push through focused work on the project.');
+        return;
+      }
+
+      if (choice.id === 'work_help') {
+        updateProject(20);
+        updatePlayer({ stress: clamp01(player.stress - 5) });
+        advanceTime(30);
+        addSystemMessage('A colleague helps you unblock a big chunk of work.');
+        return;
+      }
+
+      if (choice.id === 'work_late') {
+        if (player.energy < 40) {
+          addSystemMessage("You're too tired to stay late.");
+          return;
+        }
+        updateProject(15);
+        updatePlayer({
+          energy: clamp01(player.energy - 40),
+          stress: clamp01(player.stress + 15),
+        });
+        advanceTime(120);
+        addSystemMessage('You stay late and make strong progress.');
+        return;
+      }
+
+      if (choice.id === 'work_present') {
+        const risky = p.progress < 80;
+        advanceTime(30);
+        if (risky) {
+          updatePlayer({
+            career: {
+              ...player.career,
+              performance: clamp01(player.career.performance - 10),
+              bossApproval: clamp01(player.career.bossApproval - 8),
+            },
+          });
+          addSystemMessage('The presentation lands… but it was clearly unfinished. Your boss looks disappointed.');
+        } else {
+          updatePlayer({
+            career: {
+              ...player.career,
+              performance: clamp01(player.career.performance + 5),
+              bossApproval: clamp01(player.career.bossApproval + 5),
+            },
+          });
+          addSystemMessage('You present early and it goes well. Your boss seems impressed.');
+        }
+        return;
+      }
+    }
+
     // Apply consequences
     if (choice.consequences && player) {
       const updates: Partial<typeof player> = {};
@@ -836,6 +1059,35 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
   const startConversation = (npc: NPC) => {
     setActiveNPC(npc);
     setSceneType('dialogue');
+
+    // Lightweight "meet & talk" quest if this is your first interaction.
+    if (npc.relationship.totalInteractions === 0) {
+      const questId = `meet_${npc.id}`;
+      if (!quests.has(questId)) {
+        addQuest({
+          id: questId,
+          title: `Get to know ${npc.name.split(' ')[0]}`,
+          description: `Start building a connection with ${npc.name}.`,
+          type: 'personal',
+          giverNpcId: npc.id,
+          autoGenerated: true,
+          status: 'active',
+          objectives: [
+            {
+              id: 'talk_once',
+              description: `Have a real conversation with ${npc.name.split(' ')[0]}`,
+              type: 'talk',
+              target: npc.id,
+              completed: false,
+            },
+          ],
+          urgency: 'none',
+          rewards: [{ type: 'relationship', target: npc.id, value: 5 }],
+          startedOnDay: gameTime.day,
+        });
+        addSystemMessage(`🎯 New objective: Get to know ${npc.name.split(' ')[0]}`);
+      }
+    }
 
     const startMsg: NarrativeMessage = {
       id: makeMessageId('conversation_start'),

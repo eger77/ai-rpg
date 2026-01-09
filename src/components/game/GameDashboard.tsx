@@ -356,7 +356,14 @@ export function GameDashboard({
 
         {/* Main Area - Narrative Window */}
         <div className="flex-1 flex flex-col overflow-hidden p-4">
-          <NarrativeWindow onViewNPC={onViewNPC} onOpenMap={onOpenMap} />
+          <NarrativeWindow
+            onViewNPC={onViewNPC}
+            onOpenMap={onOpenMap}
+            onOpenPhone={onOpenPhone}
+            onOpenInventory={onOpenInventory}
+            onOpenFinances={onOpenFinances}
+            onOpenQuests={onOpenQuests}
+          />
         </div>
       </div>
     </div>
