@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { generateInitialNPCs } from '@/systems/npcGenerator';
 import { getStarterLocations } from '@/data/locations';
-import { generateCityMap, generateCharacterPortrait } from '@/services/imageService';
 import type { Gender, PlayerAppearance, PlayerStats, WorldSettings } from '@/types';
 import { User, Palette, Brain, ChevronRight, ChevronLeft, Sparkles, MapPin, Briefcase, Globe } from 'lucide-react';
 
@@ -107,7 +106,7 @@ const steps: CreationStep[] = ['basics', 'world', 'appearance', 'stats', 'review
 export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState<CreationStep>('basics');
   const [isGenerating, setIsGenerating] = useState(false);
-  const { initializeGame, addNPC, addLocation, setWorldSettings, setNPCPortrait } = useGameStore();
+  const { initializeGame, addNPC, addLocation, setWorldSettings } = useGameStore();
 
   const [character, setCharacter] = useState<CharacterData>({
     name: '',
@@ -167,14 +166,6 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
   const handleComplete = async () => {
     setIsGenerating(true);
 
-    // Generate city map image with DALL-E (async, don't block)
-    const cityMapPromise = generateCityMap({
-      cityName: world.cityName || 'New Haven',
-      cityStyle: world.cityStyle,
-      climate: world.climate,
-      size: world.citySize,
-    });
-
     // Set world settings
     const worldSettings: WorldSettings = {
       cityName: world.cityName || 'New Haven',
@@ -228,28 +219,7 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
     const npcs = generateInitialNPCs(5);
     npcs.forEach((npc) => {
       addNPC(npc);
-      // Generate NPC portrait asynchronously
-      generateCharacterPortrait({
-        gender: npc.gender,
-        age: npc.age,
-        hairColor: npc.appearance.hairColor,
-        hairStyle: npc.appearance.hairStyle,
-        eyeColor: npc.appearance.eyeColor,
-        skinTone: 'medium', // Default
-        style: world.artStyle,
-        expression: npc.currentState.mood.primary,
-      }).then((portraitUrl) => {
-        if (portraitUrl) {
-          setNPCPortrait(npc.id, portraitUrl);
-        }
-      }).catch((err) => console.warn('Portrait generation failed:', err));
     });
-
-    // Wait for city map
-    const cityMapUrl = await cityMapPromise;
-    if (cityMapUrl) {
-      useGameStore.getState().updateWorldSettings({ cityMapUrl });
-    }
 
     // Small delay for effect
     await new Promise((resolve) => setTimeout(resolve, 500));

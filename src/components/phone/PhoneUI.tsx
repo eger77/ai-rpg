@@ -133,8 +133,10 @@ export function PhoneUI({ isOpen, onClose }: PhoneUIProps) {
       };
       const emotionalImpactValue = emotionImpactMap[aiResult.detectedEmotion] || 0;
       const significance: 'forgettable' | 'notable' | 'important' | 'pivotal' | 'defining' =
-        Math.abs(emotionalImpactValue) > 60 ? 'important' :
-        Math.abs(emotionalImpactValue) > 30 ? 'notable' : 'forgettable';
+        Math.abs(emotionalImpactValue) >= 90 ? 'defining' :
+        Math.abs(emotionalImpactValue) >= 70 ? 'pivotal' :
+        Math.abs(emotionalImpactValue) >= 40 ? 'important' :
+        Math.abs(emotionalImpactValue) >= 20 ? 'notable' : 'forgettable';
 
       addNPCMemory(npc.id, {
         description: `Texted with ${player.name}: "${playerMessage.slice(0, 40)}${playerMessage.length > 40 ? '...' : ''}"`,

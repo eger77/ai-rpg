@@ -27,10 +27,6 @@ If you want AI-generated dialogue and narration:
 
 - **Grok / xAI**: set `XAI_API_KEY` (or `NEXT_PUBLIC_XAI_API_KEY`)
 
-If you want generated images (city map / NPC portraits):
-
-- **OpenAI**: set `OPENAI_API_KEY` (or `NEXT_PUBLIC_OPENAI_API_KEY`)
-
 See `.env.example` for the full list.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

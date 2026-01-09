@@ -170,7 +170,12 @@ export default function Home() {
       // Calculate travel time from current location
       const currentLoc = useGameStore.getState().locations.get(player.currentLocationId);
       const connection = currentLoc?.connectedLocations.find(c => c.locationId === location.id);
-      const travelTime = connection?.travelTime || 15;
+      let travelTime = connection?.travelTime || 15;
+
+      // Weather can slow travel a bit (simple seasonal effect)
+      const weather = useGameStore.getState().gameTime.weather;
+      if (weather === 'snowy') travelTime += 5;
+      if (weather === 'stormy') travelTime += 3;
 
       // Advance time and move
       advanceTime(travelTime);
