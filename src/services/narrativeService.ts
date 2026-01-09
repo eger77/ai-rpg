@@ -1,9 +1,18 @@
 import OpenAI from 'openai';
 import type { Player, NPC, Location, GameTime, WorldSettings } from '@/types';
 
+const getStoredXaiKey = () => {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    return window.localStorage.getItem('xai_api_key') || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 // Grok client for narrative generation
 const getGrokClient = () => {
-  const apiKey = process.env.NEXT_PUBLIC_XAI_API_KEY || process.env.XAI_API_KEY;
+  const apiKey = process.env.NEXT_PUBLIC_XAI_API_KEY || process.env.XAI_API_KEY || getStoredXaiKey();
 
   if (!apiKey) {
     console.warn('XAI_API_KEY not set. Narrative will use fallback responses.');

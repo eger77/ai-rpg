@@ -1,11 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import type { ElementType } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { NarrativeWindow } from './NarrativeWindow';
 import type { NPC, Location } from '@/types';
 import {
-  User,
   MapPin,
   Clock,
   Zap,
@@ -14,22 +13,16 @@ import {
   Droplets,
   Smile,
   DollarSign,
-  Briefcase,
   Sun,
-  Moon,
   Cloud,
   CloudRain,
   Snowflake,
   Users,
-  MessageSquare,
-  Calendar,
   ChevronRight,
-  Menu,
   Smartphone,
   ShoppingBag,
   Shirt,
   Target,
-  Star,
   Play,
   Pause,
   FastForward,
@@ -54,6 +47,48 @@ const WEATHER_ICONS = {
   snowy: Snowflake,
   foggy: Cloud,
 };
+
+function StatBar({
+  value,
+  color,
+  label,
+  icon: Icon,
+}: {
+  value: number;
+  color: string;
+  label: string;
+  icon: ElementType;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Icon className={`w-4 h-4 ${color}`} />
+      <div className="flex-1">
+        <div className="flex justify-between text-xs mb-1">
+          <span className="text-gray-400">{label}</span>
+          <span className="text-white">{Math.round(value)}%</span>
+        </div>
+        <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+          <div
+            className={`h-full transition-all ${
+              color.includes('green')
+                ? 'bg-green-500'
+                : color.includes('yellow')
+                  ? 'bg-yellow-500'
+                  : color.includes('blue')
+                    ? 'bg-blue-500'
+                    : color.includes('pink')
+                      ? 'bg-pink-500'
+                      : color.includes('red')
+                        ? 'bg-red-500'
+                        : 'bg-purple-500'
+            }`}
+            style={{ width: `${value}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function GameDashboard({
   onOpenPhone,
@@ -102,36 +137,6 @@ export function GameDashboard({
   };
 
   const WeatherIcon = WEATHER_ICONS[gameTime.weather];
-
-  const StatBar = ({ value, color, label, icon: Icon }: { value: number; color: string; label: string; icon: React.ElementType }) => (
-    <div className="flex items-center gap-2">
-      <Icon className={`w-4 h-4 ${color}`} />
-      <div className="flex-1">
-        <div className="flex justify-between text-xs mb-1">
-          <span className="text-gray-400">{label}</span>
-          <span className="text-white">{Math.round(value)}%</span>
-        </div>
-        <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
-          <div
-            className={`h-full transition-all ${
-              color.includes('green')
-                ? 'bg-green-500'
-                : color.includes('yellow')
-                ? 'bg-yellow-500'
-                : color.includes('blue')
-                ? 'bg-blue-500'
-                : color.includes('pink')
-                ? 'bg-pink-500'
-                : color.includes('red')
-                ? 'bg-red-500'
-                : 'bg-purple-500'
-            }`}
-            style={{ width: `${value}%` }}
-          />
-        </div>
-      </div>
-    </div>
-  );
 
   return (
     <div className="h-screen flex flex-col bg-gray-900">
@@ -351,7 +356,14 @@ export function GameDashboard({
 
         {/* Main Area - Narrative Window */}
         <div className="flex-1 flex flex-col overflow-hidden p-4">
-          <NarrativeWindow onViewNPC={onViewNPC} onOpenMap={onOpenMap} />
+          <NarrativeWindow
+            onViewNPC={onViewNPC}
+            onOpenMap={onOpenMap}
+            onOpenPhone={onOpenPhone}
+            onOpenInventory={onOpenInventory}
+            onOpenFinances={onOpenFinances}
+            onOpenQuests={onOpenQuests}
+          />
         </div>
       </div>
     </div>

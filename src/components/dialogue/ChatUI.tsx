@@ -170,8 +170,10 @@ export function ChatUI({ npc, isOpen, onClose }: ChatUIProps) {
 
       // Determine significance based on emotional impact
       const significance: 'forgettable' | 'notable' | 'important' | 'pivotal' | 'defining' =
-        Math.abs(emotionalImpactValue) > 60 ? 'important' :
-        Math.abs(emotionalImpactValue) > 30 ? 'notable' : 'forgettable';
+        Math.abs(emotionalImpactValue) >= 90 ? 'defining' :
+        Math.abs(emotionalImpactValue) >= 70 ? 'pivotal' :
+        Math.abs(emotionalImpactValue) >= 40 ? 'important' :
+        Math.abs(emotionalImpactValue) >= 20 ? 'notable' : 'forgettable';
 
       addNPCMemory(npc.id, {
         description: memoryDescription,
