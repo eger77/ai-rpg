@@ -84,6 +84,7 @@ interface GameActions {
   updatePlayerStats: (stats: Partial<Player['stats']>) => void;
   updatePlayerFinances: (finances: Partial<Player['finances']>) => void;
   addTransaction: (transaction: Omit<Transaction, 'id' | 'timestamp'>) => void;
+  payBill: (billId: string) => void;
   changeEnergy: (amount: number) => void;
   changeStress: (amount: number) => void;
   changeMood: (amount: number) => void;
@@ -126,6 +127,7 @@ interface GameActions {
   addNotification: (notification: Omit<Notification, 'id' | 'timestamp'>) => void;
   markMessageRead: (conversationId: string, messageId: string) => void;
   markNotificationRead: (notificationId: string) => void;
+  addCallLogEntry: (npcId: string, type: 'incoming' | 'outgoing' | 'missed', duration?: number) => void;
 
   // Email Actions
   addEmail: (email: Omit<Email, 'id'>) => void;
@@ -209,6 +211,30 @@ const getTimeOfDay = (hour: number): TimeOfDay => {
   if (hour >= 17 && hour < 21) return 'evening';
   if (hour >= 21 || hour < 1) return 'night';
   return 'late_night';
+};
+
+const getSeasonForDay = (day: number): GameTime['season'] => {
+  const d = ((day - 1) % 360) + 1;
+  if (d <= 90) return 'spring';
+  if (d <= 180) return 'summer';
+  if (d <= 270) return 'fall';
+  return 'winter';
+};
+
+const rollWeather = (climate: WorldSettings['climate'] | undefined, season: GameTime['season']): Weather => {
+  const c = climate || 'temperate';
+  const r = Math.random();
+
+  if (c === 'arctic') return r < 0.55 ? 'snowy' : r < 0.8 ? 'cloudy' : 'foggy';
+  if (c === 'desert') return r < 0.75 ? 'sunny' : r < 0.95 ? 'cloudy' : 'stormy';
+  if (c === 'tropical') return r < 0.45 ? 'sunny' : r < 0.75 ? 'rainy' : r < 0.9 ? 'stormy' : 'cloudy';
+  if (c === 'mediterranean') return r < 0.65 ? 'sunny' : r < 0.85 ? 'cloudy' : 'rainy';
+
+  // temperate default
+  if (season === 'winter') return r < 0.35 ? 'snowy' : r < 0.75 ? 'cloudy' : 'rainy';
+  if (season === 'fall') return r < 0.35 ? 'cloudy' : r < 0.75 ? 'rainy' : 'sunny';
+  if (season === 'spring') return r < 0.4 ? 'rainy' : r < 0.75 ? 'sunny' : 'cloudy';
+  return r < 0.7 ? 'sunny' : r < 0.9 ? 'cloudy' : 'stormy';
 };
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
@@ -365,7 +391,16 @@ export const useGameStore = create<GameStore>()(
                 { description: 'Performance rating 85%+', met: false },
                 { description: 'Boss approval 80%+', met: false },
               ],
-              workProjects: [],
+              workProjects: [
+                {
+                  id: 'q4_campaign',
+                  name: 'Q4 Marketing Campaign',
+                  description: 'Finalize the Q4 campaign deck and presentation.',
+                  deadline: state.gameTime.day + 5,
+                  progress: 40,
+                  importance: 'critical',
+                },
+              ],
             },
 
             energy: 100,
@@ -393,22 +428,55 @@ export const useGameStore = create<GameStore>()(
             conversations: [],
             notifications: [],
             callLog: [],
-            emails: [
-              {
-                id: 'welcome_email',
-                from: 'City Welcome Center',
-                fromAddress: 'welcome@city.gov',
-                subject: 'Welcome to your new journey!',
-                body: 'Welcome! Your adventure begins today. Make the most of every moment.\n\nWe hope you enjoy your time in our wonderful city. Feel free to explore, meet new people, and discover all that life has to offer.',
-                timestamp: { ...state.gameTime },
-                read: false,
-                starred: false,
-                folder: 'inbox',
-              },
-            ],
+            emails: [],
             contacts: [],
             blockedContacts: [],
             socialMediaFeed: [],
+          };
+
+          // Initialize email inbox (separate from texts)
+          const initialEmails: Email[] = [
+            {
+              id: 'welcome_email',
+              from: 'City Welcome Center',
+              fromAddress: 'welcome@city.gov',
+              subject: 'Welcome to your new journey!',
+              body:
+                'Welcome! Your adventure begins today. Make the most of every moment.\n\nWe hope you enjoy your time in our wonderful city. Feel free to explore, meet new people, and discover all that life has to offer.',
+              timestamp: { ...state.gameTime },
+              read: false,
+              starred: false,
+              folder: 'inbox',
+            },
+            {
+              id: 'boss_deadline',
+              from: 'Marcus Chen (Boss)',
+              fromAddress: 'marcus.chen@techvisionsolutions.com',
+              subject: 'Q4 Campaign — Deadline Reminder',
+              body:
+                `Hey ${state.player?.name || 'there'},\n\nJust a reminder that the Q4 campaign presentation is due Friday. Your initial concepts look promising, but we need the final deck by end of week.\n\nLet me know if you need any resources.\n\n—Marcus`,
+              timestamp: { ...state.gameTime },
+              read: false,
+              starred: false,
+              folder: 'inbox',
+            },
+            {
+              id: 'utilities_bill',
+              from: 'City Utilities',
+              fromAddress: 'billing@city-utilities.com',
+              subject: 'Bill Due — $150',
+              body:
+                'Your utilities bill of $150.00 is due on the 5th.\n\nYou can pay any time before the due date to avoid late fees.',
+              timestamp: { ...state.gameTime },
+              read: false,
+              starred: false,
+              folder: 'inbox',
+            },
+          ];
+
+          state.emailState = {
+            emails: initialEmails,
+            unreadCount: initialEmails.filter((e) => !e.read && e.folder === 'inbox').length,
           };
         });
       },
@@ -449,6 +517,8 @@ export const useGameStore = create<GameStore>()(
 
       advanceTime: (minutes) => {
         set((state) => {
+          const previousDay = state.gameTime.day;
+
           let newMinute = state.gameTime.minute + minutes;
           let newHour = state.gameTime.hour;
           let newDay = state.gameTime.day;
@@ -471,7 +541,120 @@ export const useGameStore = create<GameStore>()(
             hour: newHour,
             day: newDay,
             dayOfWeek: getDayOfWeek(newDay),
+            season: getSeasonForDay(newDay),
           };
+
+          // Increment "days since contact" when days pass
+          if (newDay > previousDay) {
+            const dayDelta = newDay - previousDay;
+            // Update daily weather on day change
+            state.gameTime.weather = rollWeather(state.worldSettings?.climate, state.gameTime.season);
+
+            // Paycheck processing (basic)
+            if (state.player) {
+              const freqDays = state.player.career.payFrequency === 'weekly' ? 7 : state.player.career.payFrequency === 'monthly' ? 30 : 14;
+              if (state.player.career.nextPayday <= newDay) {
+                const periodsPerYear = state.player.career.payFrequency === 'monthly' ? 12 : state.player.career.payFrequency === 'weekly' ? 52 : 26;
+                const paycheck = Math.round(state.player.career.salary / periodsPerYear);
+                state.player.finances.balance += paycheck;
+                state.player.finances.transactions.push({
+                  id: generateId(),
+                  amount: paycheck,
+                  description: 'Paycheck',
+                  category: 'income',
+                  timestamp: { ...state.gameTime, day: newDay, dayOfWeek: getDayOfWeek(newDay) },
+                });
+                state.player.career.nextPayday = newDay + freqDays;
+
+                if (state.phone) {
+                  state.phone.notifications.push({
+                    id: generateId(),
+                    type: 'bill',
+                    title: 'Paycheck received',
+                    body: `+$${paycheck.toLocaleString()}`,
+                    timestamp: { ...state.gameTime, day: newDay, dayOfWeek: getDayOfWeek(newDay) },
+                    read: false,
+                    urgent: false,
+                  });
+                }
+
+                if (state.emailState) {
+                  state.emailState.emails.unshift({
+                    id: generateId(),
+                    from: state.player.career.companyName,
+                    fromAddress: 'payroll@company.com',
+                    subject: 'Paycheck deposited',
+                    body: `Your paycheck of $${paycheck.toLocaleString()} has been deposited.`,
+                    timestamp: { ...state.gameTime, day: newDay, dayOfWeek: getDayOfWeek(newDay) },
+                    read: false,
+                    starred: false,
+                    folder: 'inbox',
+                  });
+                  state.emailState.unreadCount += 1;
+                }
+              }
+
+              // Bill reminders + late fees (basic)
+              const dayOfMonth = newDay % 30;
+              const monthIndex = Math.floor((newDay - 1) / 30);
+              for (const bill of state.player.finances.pendingBills) {
+                if (bill.paid) continue;
+                if (bill.dueDay === dayOfMonth && state.phone) {
+                  state.phone.notifications.push({
+                    id: generateId(),
+                    type: 'bill',
+                    title: 'Bill due',
+                    body: `${bill.name} — $${bill.amount} due today`,
+                    timestamp: { ...state.gameTime, day: newDay, dayOfWeek: getDayOfWeek(newDay) },
+                    read: false,
+                    urgent: true,
+                  });
+                }
+
+                if (dayOfMonth > bill.dueDay) {
+                  const lateKey = `latefee_${bill.id}_${monthIndex}`;
+                  if (!state.globalFlags[lateKey]) {
+                    state.globalFlags[lateKey] = true;
+                    const lateFee = 25;
+                    state.player.finances.balance = Math.max(0, state.player.finances.balance - lateFee);
+                    state.player.finances.creditScore = Math.max(300, state.player.finances.creditScore - 5);
+                    state.player.finances.transactions.push({
+                      id: generateId(),
+                      amount: -lateFee,
+                      description: `Late fee (${bill.name})`,
+                      category: 'bill',
+                      timestamp: { ...state.gameTime, day: newDay, dayOfWeek: getDayOfWeek(newDay) },
+                    });
+
+                    if (state.emailState) {
+                      state.emailState.emails.unshift({
+                        id: generateId(),
+                        from: bill.name,
+                        fromAddress: 'billing@services.com',
+                        subject: `Late fee applied — ${bill.name}`,
+                        body: `A late fee of $${lateFee} was applied for ${bill.name}.`,
+                        timestamp: { ...state.gameTime, day: newDay, dayOfWeek: getDayOfWeek(newDay) },
+                        read: false,
+                        starred: false,
+                        folder: 'inbox',
+                      });
+                      state.emailState.unreadCount += 1;
+                    }
+                  }
+                }
+              }
+            }
+
+            state.npcs.forEach((npc, id) => {
+              state.npcs.set(id, {
+                ...npc,
+                relationship: {
+                  ...npc.relationship,
+                  daysSinceContact: npc.relationship.daysSinceContact + dayDelta,
+                },
+              });
+            });
+          }
 
           // Update player stats based on time passing
           if (state.player) {
@@ -590,6 +773,44 @@ export const useGameStore = create<GameStore>()(
         });
       },
 
+      payBill: (billId) => {
+        set((state) => {
+          if (!state.player) return;
+          const bill = state.player.finances.pendingBills.find((b) => b.id === billId);
+          if (!bill || bill.paid) return;
+          if (state.player.finances.balance < bill.amount) return;
+
+          bill.paid = true;
+          state.player.finances.balance -= bill.amount;
+          state.player.finances.transactions.push({
+            id: generateId(),
+            amount: -bill.amount,
+            description: `Paid ${bill.name}`,
+            category: 'bill',
+            timestamp: { ...state.gameTime },
+          });
+
+          // Small credit score effect: paying helps if it was overdue.
+          const dayOfMonth = state.gameTime.day % 30;
+          const overdue = bill.dueDay - dayOfMonth <= 0;
+          if (overdue) {
+            state.player.finances.creditScore = Math.max(300, state.player.finances.creditScore + 2);
+          }
+
+          if (state.phone) {
+            state.phone.notifications.push({
+              id: generateId(),
+              type: 'bill',
+              title: 'Bill paid',
+              body: `${bill.name} paid ($${bill.amount})`,
+              timestamp: { ...state.gameTime },
+              read: false,
+              urgent: false,
+            });
+          }
+        });
+      },
+
       changeEnergy: (amount) => {
         set((state) => {
           if (state.player) {
@@ -675,9 +896,60 @@ export const useGameStore = create<GameStore>()(
         set((state) => {
           const npc = state.npcs.get(npcId);
           if (npc) {
+            const relationship = { ...npc.relationship, ...updates };
+
+            // Derive relationship status/stage from metrics (basic progression)
+            const f = relationship.friendship;
+            const r = relationship.romance;
+            const t = relationship.trust;
+
+            let status = relationship.status;
+            if (relationship.totalInteractions <= 0 && f <= 0 && r <= 0) status = 'stranger';
+            else if (r >= 80 && t >= 65) status = relationship.isExclusive ? 'exclusive' : 'dating';
+            else if (r >= 60 && t >= 50) status = 'dating';
+            else if (r >= 30 && f >= 30) status = 'romantic_interest';
+            else if (f >= 60) status = 'close_friend';
+            else if (f >= 30) status = 'friend';
+            else if (relationship.totalInteractions > 0) status = 'acquaintance';
+
+            let stage = relationship.stage;
+            if (status === 'stranger') stage = 'unknown';
+            else if (status === 'acquaintance') stage = 'introduction';
+            else if (status === 'friend') stage = 'friendship';
+            else if (status === 'close_friend') stage = 'deep_connection';
+            else if (status === 'romantic_interest') stage = 'flirtation';
+            else if (status === 'dating') stage = 'early_romance';
+            else if (status === 'exclusive') stage = 'commitment';
+            else if (status === 'committed') stage = 'commitment';
+
+            relationship.status = status;
+            relationship.stage = stage;
+
+            // Milestone completion (stat requirements only)
+            const newlyCompleted: typeof relationship.milestonesAvailable = [];
+            relationship.milestonesAvailable.forEach((m) => {
+              const met = m.requirements.every((req) => {
+                if (req.type !== 'stat') return req.met;
+                if (req.target === 'friendship') return f >= Number(req.value);
+                if (req.target === 'romance') return r >= Number(req.value);
+                if (req.target === 'trust') return t >= Number(req.value);
+                if (req.target === 'respect') return relationship.respect >= Number(req.value);
+                return req.met;
+              });
+              if (met && !m.completed) newlyCompleted.push({ ...m, completed: true, completedOnDay: state.gameTime.day });
+            });
+
+            if (newlyCompleted.length > 0) {
+              relationship.milestonesCompleted = [...relationship.milestonesCompleted, ...newlyCompleted];
+              relationship.milestonesAvailable = relationship.milestonesAvailable.map((m) => {
+                const found = newlyCompleted.find((c) => c.id === m.id);
+                return found ? found : m;
+              });
+            }
+
             state.npcs.set(npcId, {
               ...npc,
-              relationship: { ...npc.relationship, ...updates },
+              relationship,
             });
           }
         });
@@ -756,11 +1028,49 @@ export const useGameStore = create<GameStore>()(
 
         if (knownNPCs.length === 0) return;
 
-        // Random chance for NPC to message (higher relationship = higher chance)
+        // Pick an NPC and decide if they reach out (frequency scales with relationship).
         const npc = knownNPCs[Math.floor(Math.random() * knownNPCs.length)];
-        const messageProbability = Math.min(0.3, (npc.relationship.friendship + npc.relationship.romance) / 500);
+        const f = npc.relationship.friendship;
+        const r = npc.relationship.romance;
+
+        let messageProbability = 0;
+        if (f < 20 && r < 20) messageProbability = 0; // rarely/never
+        else if (f < 40) messageProbability = 0.08; // occasional
+        else if (f < 60) messageProbability = 0.15; // regular
+        else if (f < 80) messageProbability = 0.22; // frequent
+        else messageProbability = 0.28; // very frequent
+
+        if (r >= 40) messageProbability += 0.05;
+        if (r >= 70) messageProbability += 0.05;
+        messageProbability = Math.min(0.35, messageProbability);
 
         if (Math.random() > messageProbability) return;
+
+        // Small chance to initiate a call instead of a text when relationship is high.
+        if (npc.relationship.friendship >= 60 && Math.random() < 0.15) {
+          set((s) => {
+            if (!s.phone) return;
+            s.phone.callLog.unshift({
+              id: generateId(),
+              npcId: npc.id,
+              timestamp: { ...s.gameTime },
+              type: 'incoming',
+              duration: 0,
+              hasVoicemail: false,
+            });
+            s.phone.notifications.push({
+              id: generateId(),
+              type: 'call',
+              title: `Incoming call: ${npc.name}`,
+              body: npc.relationship.romance >= 60 ? '“Hey… I wanted to hear your voice.”' : '“Got a minute?”',
+              timestamp: { ...s.gameTime },
+              read: false,
+              sourceNpcId: npc.id,
+              urgent: npc.relationship.romance >= 70,
+            });
+          });
+          return;
+        }
 
         // Generate a contextual message based on relationship
         const greetings = [
@@ -775,19 +1085,36 @@ export const useGameStore = create<GameStore>()(
           `Coffee later?`,
           `Miss our chats! Let's catch up soon`,
         ];
-        const romanticMessages = [
+        const flirtyMessages = [
           `Can't stop thinking about our last conversation...`,
           `When can I see you again?`,
-          `You make me smile 😊`,
           `Are you free this weekend?`,
+        ];
+        const romanticMessages = [
+          `Good morning ❤️ Hope you slept well.`,
+          `I miss you. When can I see you again?`,
+          `You’ve been on my mind a lot lately.`,
+        ];
+        const jealousMessages = [
+          `So… I saw you with someone the other day. Are you two close?`,
+          `Maybe I'm overthinking, but… are you seeing anyone else?`,
+        ];
+        const neglectMessages = [
+          `Hey stranger... haven't heard from you in a while. Everything okay? Miss talking to you.`,
+          `You’ve been quiet lately. Just checking in—are you alright?`,
         ];
 
         let messages = greetings;
-        if (npc.relationship.friendship > 40) {
-          messages = [...messages, ...friendlyMessages];
-        }
-        if (npc.relationship.romance > 30) {
-          messages = [...messages, ...romanticMessages];
+        if (npc.relationship.neglectWarning && npc.relationship.friendship >= 60) {
+          messages = [...neglectMessages, ...greetings];
+        } else if (npc.relationship.jealousyLevel > 40 && npc.relationship.romance >= 40) {
+          messages = [...jealousMessages, ...greetings];
+        } else if (npc.relationship.romance >= 70) {
+          messages = [...romanticMessages, ...friendlyMessages];
+        } else if (npc.relationship.romance >= 40) {
+          messages = [...flirtyMessages, ...friendlyMessages];
+        } else if (npc.relationship.friendship >= 40) {
+          messages = [...friendlyMessages, ...greetings];
         }
 
         const content = messages[Math.floor(Math.random() * messages.length)];
@@ -965,7 +1292,14 @@ export const useGameStore = create<GameStore>()(
           if (npc) {
             state.npcs.set(npcId, {
               ...npc,
-              relationship: { ...npc.relationship, daysSinceContact: 0, neglectWarning: false },
+              relationship: {
+                ...npc.relationship,
+                daysSinceContact: 0,
+                neglectWarning: false,
+                totalInteractions: npc.relationship.totalInteractions + 1,
+                positiveInteractions: npc.relationship.positiveInteractions + 1,
+                lastInteraction: { ...state.gameTime },
+              },
             });
           }
         });
@@ -1054,6 +1388,21 @@ export const useGameStore = create<GameStore>()(
         });
       },
 
+      addCallLogEntry: (npcId, type, duration) => {
+        set((state) => {
+          if (!state.phone) return;
+          state.phone.callLog.unshift({
+            id: generateId(),
+            npcId,
+            timestamp: { ...state.gameTime },
+            type,
+            duration,
+            hasVoicemail: type === 'missed',
+            voicemailContent: type === 'missed' ? "Sorry I missed you—call me back when you can." : undefined,
+          });
+        });
+      },
+
       sendTextMessage: (npcId, content) => {
         set((state) => {
           if (state.phone) {
@@ -1089,7 +1438,14 @@ export const useGameStore = create<GameStore>()(
           if (npc) {
             state.npcs.set(npcId, {
               ...npc,
-              relationship: { ...npc.relationship, daysSinceContact: 0, neglectWarning: false },
+              relationship: {
+                ...npc.relationship,
+                daysSinceContact: 0,
+                neglectWarning: false,
+                totalInteractions: npc.relationship.totalInteractions + 1,
+                positiveInteractions: npc.relationship.positiveInteractions + 1,
+                lastInteraction: { ...state.gameTime },
+              },
             });
           }
         });

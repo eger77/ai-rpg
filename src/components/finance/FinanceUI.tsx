@@ -24,7 +24,7 @@ interface FinanceUIProps {
 }
 
 export function FinanceUI({ isOpen, onClose }: FinanceUIProps) {
-  const { player, gameTime } = useGameStore();
+  const { player, gameTime, payBill } = useGameStore();
   const [activeTab, setActiveTab] = useState<'overview' | 'bills' | 'transactions' | 'career'>('overview');
 
   if (!isOpen || !player) return null;
@@ -248,6 +248,7 @@ export function FinanceUI({ isOpen, onClose }: FinanceUIProps) {
                         </div>
                         <button
                           disabled={!canAfford}
+                          onClick={() => canAfford && payBill(bill.id)}
                           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                             canAfford
                               ? 'bg-green-600 hover:bg-green-500 text-white'

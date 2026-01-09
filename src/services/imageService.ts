@@ -1,19 +1,4 @@
-import OpenAI from 'openai';
-
-// DALL-E client for image generation
-const getDalleClient = () => {
-  const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-
-  if (!apiKey) {
-    console.warn('OPENAI_API_KEY not set. Image generation will use placeholders.');
-    return null;
-  }
-
-  return new OpenAI({
-    apiKey,
-    dangerouslyAllowBrowser: true,
-  });
-};
+// Image generation removed (simplified build).
 
 export interface MapGenerationParams {
   cityName: string;
@@ -43,85 +28,20 @@ export interface CharacterPortraitParams {
 
 // Generate a city map overview
 export async function generateCityMap(params: MapGenerationParams): Promise<string | null> {
-  const client = getDalleClient();
-  if (!client) return null;
-
-  const prompt = `A beautiful illustrated top-down city map of ${params.cityName}, a ${params.size} ${params.cityStyle} city with ${params.climate} climate. The map shows various districts, streets, parks, and landmarks in a stylized illustrated map style like a video game world map. Colorful, detailed, no text or labels.`;
-
-  try {
-    const response = await client.images.generate({
-      model: 'dall-e-3',
-      prompt,
-      n: 1,
-      size: '1024x1024',
-      quality: 'standard',
-    });
-
-    return response.data?.[0]?.url || null;
-  } catch (error) {
-    console.error('Error generating city map:', error);
-    return null;
-  }
+  void params;
+  return null;
 }
 
 // Generate a location background image
 export async function generateLocationImage(params: LocationImageParams): Promise<string | null> {
-  const client = getDalleClient();
-  if (!client) return null;
-
-  const timeDescriptions: Record<string, string> = {
-    morning: 'soft morning light, sunrise colors',
-    afternoon: 'bright daylight, clear skies',
-    evening: 'golden hour, warm sunset lighting',
-    night: 'nighttime, city lights, moonlight',
-  };
-
-  const prompt = `Interior/exterior view of a ${params.locationType} called "${params.locationName}" in a ${params.cityStyle} city. ${timeDescriptions[params.timeOfDay]}, ${params.weather} weather. Atmospheric, detailed, cozy environment, perfect for a life simulation game. No people, no text.`;
-
-  try {
-    const response = await client.images.generate({
-      model: 'dall-e-3',
-      prompt,
-      n: 1,
-      size: '1792x1024',
-      quality: 'standard',
-    });
-
-    return response.data?.[0]?.url || null;
-  } catch (error) {
-    console.error('Error generating location image:', error);
-    return null;
-  }
+  void params;
+  return null;
 }
 
 // Generate a character portrait
 export async function generateCharacterPortrait(params: CharacterPortraitParams): Promise<string | null> {
-  const client = getDalleClient();
-  if (!client) return null;
-
-  const styleDescriptions: Record<string, string> = {
-    anime: 'anime art style, soft shading, expressive eyes',
-    realistic: 'realistic digital portrait, detailed features',
-    cartoon: 'stylized cartoon portrait, vibrant colors',
-    painterly: 'oil painting style portrait, artistic brushstrokes',
-  };
-
-  const prompt = `Portrait of a ${params.age} year old ${params.gender} with ${params.hairColor} ${params.hairStyle} hair, ${params.eyeColor} eyes, ${params.skinTone} skin. ${params.expression || 'neutral expression'}. ${styleDescriptions[params.style] || styleDescriptions.anime}. Shoulders up, facing slightly to the side, soft background. High quality character portrait for a romance simulation game.`;
-
-  try {
-    const response = await client.images.generate({
-      model: 'dall-e-3',
-      prompt,
-      n: 1,
-      size: '1024x1024',
-      quality: 'standard',
-    });
-
-    return response.data?.[0]?.url || null;
-  } catch (error) {
-    console.error('Error generating character portrait:', error);
-    return null;
-  }
+  void params;
+  return null;
 }
 
 // Generate multiple location thumbnails for the map
@@ -129,25 +49,9 @@ export async function generateLocationThumbnail(
   locationName: string,
   locationType: string
 ): Promise<string | null> {
-  const client = getDalleClient();
-  if (!client) return null;
-
-  const prompt = `Small icon/thumbnail of a ${locationType} (${locationName}). Simple, clear, iconic representation suitable for a map marker. Stylized, colorful, no text.`;
-
-  try {
-    const response = await client.images.generate({
-      model: 'dall-e-3',
-      prompt,
-      n: 1,
-      size: '1024x1024',
-      quality: 'standard',
-    });
-
-    return response.data?.[0]?.url || null;
-  } catch (error) {
-    console.error('Error generating location thumbnail:', error);
-    return null;
-  }
+  void locationName;
+  void locationType;
+  return null;
 }
 
 // Placeholder gradient generator when API is not available
@@ -173,10 +77,12 @@ export function getPlaceholderGradient(seed: string): string {
   return gradients[Math.abs(hash) % gradients.length];
 }
 
-export default {
+const imageService = {
   generateCityMap,
   generateLocationImage,
   generateCharacterPortrait,
   generateLocationThumbnail,
   getPlaceholderGradient,
 };
+
+export default imageService;

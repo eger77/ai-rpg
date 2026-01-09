@@ -1,9 +1,18 @@
 import OpenAI from 'openai';
 import type { NPC, Player, GameTime, DialogueReaction, EmotionType } from '@/types';
 
+const getStoredXaiKey = () => {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    return window.localStorage.getItem('xai_api_key') || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 // Grok API client (compatible with OpenAI SDK)
 const getGrokClient = () => {
-  const apiKey = process.env.NEXT_PUBLIC_XAI_API_KEY || process.env.XAI_API_KEY;
+  const apiKey = process.env.NEXT_PUBLIC_XAI_API_KEY || process.env.XAI_API_KEY || getStoredXaiKey();
 
   if (!apiKey) {
     console.warn('XAI_API_KEY not set. AI dialogue will use fallback responses.');
