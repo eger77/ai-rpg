@@ -196,6 +196,28 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
       gender: character.gender,
       appearance: character.appearance,
       stats: character.stats,
+      career: {
+        employed: true,
+        companyName: `${world.cityName || 'New Haven'} ${world.cityStyle === 'fantasy' ? 'Guild' : 'Company'}`,
+        position: world.careerPath || 'Office Worker',
+        department: 'General',
+        salary: 38400,
+        payFrequency: 'biweekly',
+        nextPayday: 14,
+        workDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+        workStartHour: 9,
+        workEndHour: 17,
+        performance: 70,
+        bossApproval: 60,
+        employmentDuration: 0,
+        promotionRequirements: [
+          { description: '6 months experience', met: false },
+          { description: 'Complete major project', met: false },
+          { description: 'Performance rating 85%+', met: false },
+          { description: 'Boss approval 80%+', met: false },
+        ],
+        workProjects: [],
+      },
     });
 
     // Add starter locations
@@ -655,7 +677,7 @@ export function CharacterCreation({ onComplete }: { onComplete: () => void }) {
                     Starting Scenario
                   </h4>
                   <p className="text-gray-300 italic">
-                    "{world.startingScenario || 'Beginning a new chapter in life...'}"
+                    &quot;{world.startingScenario || 'Beginning a new chapter in life...'}&quot;
                   </p>
                 </div>
 

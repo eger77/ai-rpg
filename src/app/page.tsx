@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '@/stores/gameStore';
 import { CharacterCreation } from '@/components/game/CharacterCreation';
 import { GameDashboard } from '@/components/game/GameDashboard';
@@ -21,8 +21,9 @@ import { generateInitialNPCs } from '@/systems/npcGenerator';
 type GameScreen = 'loading' | 'title' | 'character_creation' | 'game';
 
 export default function Home() {
-  const { initialized, player, advanceTime, moveToLocation, locations, npcs, addLocation, addNPC, paused } = useGameStore();
+  const { initialized, player, advanceTime, moveToLocation, locations, npcs, addLocation, addNPC, paused, gameSpeed } = useGameStore();
   const [screen, setScreen] = useState<GameScreen>('loading');
+  const tickAccumulatorRef = useRef(0);
 
   // UI State
   const [showPhone, setShowPhone] = useState(false);
@@ -69,12 +70,17 @@ export default function Home() {
     if (screen !== 'game' || !initialized || paused) return;
 
     const interval = setInterval(() => {
-      // Advance 1 minute every 2 seconds of real time
-      advanceTime(1);
+      // Advance game time based on gameSpeed while keeping gameTime as integer minutes.
+      tickAccumulatorRef.current += gameSpeed;
+      const wholeMinutes = Math.floor(tickAccumulatorRef.current);
+      if (wholeMinutes >= 1) {
+        tickAccumulatorRef.current -= wholeMinutes;
+        advanceTime(wholeMinutes);
+      }
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [screen, initialized, advanceTime, paused]);
+  }, [screen, initialized, advanceTime, paused, gameSpeed]);
 
   // Loading Screen
   if (screen === 'loading') {

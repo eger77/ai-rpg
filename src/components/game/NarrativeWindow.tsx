@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useGameStore } from '@/stores/gameStore';
-import type { NPC, Location } from '@/types';
+import type { NPC } from '@/types';
 import {
   generateNarrative,
   generateSceneOpening,
@@ -13,11 +13,9 @@ import {
 import { generateNPCResponse } from '@/services/aiService';
 import {
   Send,
-  MessageSquare,
   User,
   Sparkles,
   Clock,
-  ChevronRight,
   Loader2,
   MapPin,
   Heart,
@@ -62,6 +60,13 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const messageSeqRef = useRef(0);
+
+  const makeMessageId = (kind: string) => {
+    messageSeqRef.current += 1;
+    // Stable, deterministic ID without relying on Date.now() (linted as impure).
+    return `msg_${gameTime.day}_${gameTime.hour}_${gameTime.minute}_${messageSeqRef.current}_${kind}`;
+  };
 
   const currentLocation = player ? locations.get(player.currentLocationId) : null;
   const npcsHere = player ? getNPCsAtLocation(player.currentLocationId) : [];
@@ -71,14 +76,7 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Generate initial scene when location changes
-  useEffect(() => {
-    if (player && currentLocation && messages.length === 0) {
-      generateInitialScene();
-    }
-  }, [player?.currentLocationId]);
-
-  const generateInitialScene = async () => {
+  async function generateInitialScene() {
     if (!player || !currentLocation || !worldSettings) return;
 
     setIsGenerating(true);
@@ -97,7 +95,7 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
       const opening = await generateSceneOpening(context);
 
       const initialMessage: NarrativeMessage = {
-        id: `msg_${Date.now()}`,
+        id: makeMessageId('scene_opening'),
         type: 'narration',
         content: opening,
         timestamp: { ...gameTime },
@@ -152,7 +150,17 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
     }
 
     setIsGenerating(false);
-  };
+  }
+
+  // Generate initial scene when location changes
+  useEffect(() => {
+    if (player && currentLocation && messages.length === 0) {
+      const t = setTimeout(() => {
+        void generateInitialScene();
+      }, 0);
+      return () => clearTimeout(t);
+    }
+  }, [player?.currentLocationId]);
 
   const handleSendMessage = async () => {
     if (!inputText.trim() || isGenerating || !player || !currentLocation || !worldSettings) return;
@@ -165,7 +173,7 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
 
     // Add player message
     const playerMsg: NarrativeMessage = {
-      id: `msg_${Date.now()}`,
+      id: makeMessageId('player'),
       type: 'player_action',
       content: playerMessage,
       speaker: player.name,
@@ -208,8 +216,9 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
     );
 
     // Add NPC response
+    const npcMsgId = makeMessageId(`npc_${activeNPC.id}`);
     const npcMsg: NarrativeMessage = {
-      id: `msg_${Date.now()}`,
+      id: npcMsgId,
       type: 'dialogue',
       content: result.response,
       speaker: activeNPC.name,
@@ -222,7 +231,7 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
     // Add micro-expression as separate message if present
     if (result.microExpression) {
       const actionMsg: NarrativeMessage = {
-        id: `msg_${Date.now()}_action`,
+        id: `${npcMsgId}_action`,
         type: 'npc_action',
         content: result.microExpression,
         speaker: activeNPC.name,
@@ -293,8 +302,9 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
     const result = await generateNarrative(context, playerMessage, messages);
 
     // Add narration
+    const narrationId = makeMessageId('narration');
     const narrationMsg: NarrativeMessage = {
-      id: `msg_${Date.now()}`,
+      id: narrationId,
       type: 'narration',
       content: result.narration,
       timestamp: { ...gameTime },
@@ -306,7 +316,7 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
       const npc = npcsHere.find((n) => n.name === result.npcDialogue!.name);
       if (result.npcDialogue.action) {
         const actionMsg: NarrativeMessage = {
-          id: `msg_${Date.now()}_action`,
+          id: `${narrationId}_npc_action`,
           type: 'npc_action',
           content: result.npcDialogue.action,
           speaker: result.npcDialogue.name,
@@ -317,7 +327,7 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
       }
 
       const dialogueMsg: NarrativeMessage = {
-        id: `msg_${Date.now()}_dialogue`,
+        id: `${narrationId}_npc_dialogue`,
         type: 'dialogue',
         content: result.npcDialogue.text,
         speaker: result.npcDialogue.name,
@@ -397,7 +407,7 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
     setSceneType('dialogue');
 
     const startMsg: NarrativeMessage = {
-      id: `msg_${Date.now()}`,
+      id: makeMessageId('conversation_start'),
       type: 'narration',
       content: `You walk over to ${npc.name}, who is ${npc.currentState.currentActivity}. ${npc.relationship.friendship > 40 ? 'They smile as they see you approaching.' : 'They notice you approaching.'}`,
       timestamp: { ...gameTime },
@@ -415,7 +425,7 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
   const endConversation = () => {
     if (activeNPC) {
       const endMsg: NarrativeMessage = {
-        id: `msg_${Date.now()}`,
+        id: makeMessageId('conversation_end'),
         type: 'narration',
         content: `You say goodbye to ${activeNPC.name} and step away.`,
         timestamp: { ...gameTime },
@@ -430,7 +440,7 @@ export function NarrativeWindow({ onViewNPC, onOpenMap }: NarrativeWindowProps) 
 
   const addSystemMessage = (content: string) => {
     const msg: NarrativeMessage = {
-      id: `msg_${Date.now()}`,
+      id: makeMessageId('system'),
       type: 'system',
       content,
       timestamp: { ...gameTime },

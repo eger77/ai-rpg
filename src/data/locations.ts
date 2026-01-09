@@ -830,6 +830,440 @@ export const createFarmersMarket = (): Location => ({
   ],
 });
 
+// =====================================================
+// WORK / NPC LOCATIONS (to support NPC schedules)
+// =====================================================
+
+export const createNPCResidentialBlock = (): Location => ({
+  id: 'npc_home',
+  name: 'Residential Block',
+  type: 'apartment',
+  description: 'A quiet neighborhood of apartment buildings where many locals live.',
+
+  unlocked: true,
+  unlockRequirements: [],
+
+  openHours: 'always',
+  closedDays: [],
+
+  noiseLevel: 'quiet',
+  crowdLevel: 'sparse',
+  ambiance: 'A calm stretch of city streets with softly lit windows and the occasional passerby.',
+
+  availableActivities: [
+    {
+      id: 'stroll_residential',
+      name: 'Take a stroll',
+      description: 'Walk around and clear your head',
+      duration: 20,
+      energyCost: 5,
+      moneyCost: 0,
+      moodChange: 5,
+      stressChange: -5,
+      canInviteNPC: true,
+      romanticPotential: false,
+    },
+  ],
+
+  interactionPoints: [
+    { id: 'sidewalk', name: 'Sidewalk', description: 'A quiet street lined with trees', privateLevel: 20 },
+    { id: 'courtyard', name: 'Courtyard', description: 'A small shared courtyard between buildings', privateLevel: 60 },
+  ],
+
+  discoveryZones: [],
+  regularNPCs: [],
+  staffNPCs: [],
+
+  connectedLocations: [
+    { locationId: 'home', travelTime: 8 },
+    { locationId: 'downtown_cafe', travelTime: 12 },
+  ],
+});
+
+export const createTechCompany = (): Location => ({
+  id: 'tech_company',
+  name: 'NeonByte HQ',
+  type: 'office',
+  description: 'A sleek office building buzzing with meetings, deadlines, and the quiet click of keyboards.',
+
+  unlocked: true,
+  unlockRequirements: [],
+
+  openHours: { open: 7, close: 20 },
+  closedDays: ['saturday', 'sunday'],
+
+  noiseLevel: 'moderate',
+  crowdLevel: 'moderate',
+  ambiance: 'Cool air conditioning, glass walls, and the distant murmur of standups and phone calls.',
+
+  availableActivities: [
+    {
+      id: 'work_shift',
+      name: 'Do some work',
+      description: 'Catch up on tasks and emails',
+      duration: 120,
+      energyCost: 25,
+      moneyCost: 0,
+      moodChange: -5,
+      stressChange: 10,
+      canInviteNPC: false,
+      romanticPotential: false,
+    },
+    {
+      id: 'coffee_break',
+      name: 'Take a coffee break',
+      description: 'Step away for a quick reset',
+      duration: 15,
+      energyCost: -5,
+      moneyCost: 3,
+      moodChange: 5,
+      stressChange: -5,
+      canInviteNPC: true,
+      romanticPotential: false,
+    },
+  ],
+
+  interactionPoints: [
+    { id: 'lobby', name: 'Lobby', description: 'Polished stone and a friendly receptionist', privateLevel: 10 },
+    { id: 'break_room', name: 'Break Room', description: 'Coffee machine and snacks', privateLevel: 30 },
+    { id: 'conference', name: 'Conference Room', description: 'A glass room with a long table', privateLevel: 20 },
+  ],
+
+  discoveryZones: [],
+  regularNPCs: [],
+  staffNPCs: [],
+
+  connectedLocations: [
+    { locationId: 'downtown_cafe', travelTime: 6 },
+    { locationId: 'home', travelTime: 18 },
+  ],
+});
+
+export const createHospital = (): Location => ({
+  id: 'hospital',
+  name: 'Riverside Medical Center',
+  type: 'office',
+  description: 'A busy hospital with bright hallways, quiet waiting rooms, and staff moving with purpose.',
+
+  unlocked: true,
+  unlockRequirements: [],
+
+  openHours: 'always',
+  closedDays: [],
+
+  noiseLevel: 'moderate',
+  crowdLevel: 'moderate',
+  ambiance: 'The soft beep of machines, hushed conversations, and the clean scent of sanitizer.',
+
+  availableActivities: [
+    {
+      id: 'visit',
+      name: 'Visit someone',
+      description: 'Stop by and offer support',
+      duration: 45,
+      energyCost: 10,
+      moneyCost: 0,
+      moodChange: 5,
+      stressChange: 0,
+      canInviteNPC: true,
+      romanticPotential: false,
+    },
+  ],
+
+  interactionPoints: [
+    { id: 'waiting_room', name: 'Waiting Room', description: 'Rows of chairs and a TV on mute', privateLevel: 20 },
+    { id: 'cafeteria', name: 'Cafeteria', description: 'Quick meals for visitors and staff', privateLevel: 30 },
+  ],
+
+  discoveryZones: [],
+  regularNPCs: [],
+  staffNPCs: [],
+
+  connectedLocations: [
+    { locationId: 'city_park', travelTime: 12 },
+    { locationId: 'downtown_cafe', travelTime: 12 },
+  ],
+});
+
+export const createSchool = (): Location => ({
+  id: 'school',
+  name: 'Starlight Community School',
+  type: 'office',
+  description: 'A neighborhood school with classrooms, a small courtyard, and the echo of footsteps in the hall.',
+
+  unlocked: true,
+  unlockRequirements: [],
+
+  openHours: { open: 7, close: 18 },
+  closedDays: ['saturday', 'sunday'],
+
+  noiseLevel: 'loud',
+  crowdLevel: 'moderate',
+  ambiance: 'Distant chatter, the squeak of sneakers in the gym, and the smell of pencil shavings.',
+
+  availableActivities: [
+    {
+      id: 'volunteer',
+      name: 'Volunteer',
+      description: 'Help out with a school activity',
+      duration: 60,
+      energyCost: 15,
+      moneyCost: 0,
+      moodChange: 10,
+      stressChange: -5,
+      canInviteNPC: false,
+      romanticPotential: false,
+    },
+  ],
+
+  interactionPoints: [
+    { id: 'hallway', name: 'Hallway', description: 'Lockers line the walls', privateLevel: 10 },
+    { id: 'courtyard', name: 'Courtyard', description: 'A small outdoor space', privateLevel: 40 },
+  ],
+
+  discoveryZones: [],
+  regularNPCs: [],
+  staffNPCs: [],
+
+  connectedLocations: [
+    { locationId: 'downtown_cafe', travelTime: 10 },
+    { locationId: 'npc_home', travelTime: 10 },
+  ],
+});
+
+export const createDesignStudio = (): Location => ({
+  id: 'design_studio',
+  name: 'Ink & Pixel Studio',
+  type: 'office',
+  description: 'A creative studio filled with sketches, mood boards, and warm desk lamps.',
+
+  unlocked: true,
+  unlockRequirements: [],
+
+  openHours: { open: 9, close: 19 },
+  closedDays: [],
+
+  noiseLevel: 'quiet',
+  crowdLevel: 'sparse',
+  ambiance: 'Soft music, the scratch of pencils, and the glow of monitors in a cozy workspace.',
+
+  availableActivities: [
+    {
+      id: 'brainstorm',
+      name: 'Brainstorm ideas',
+      description: 'Let your creativity flow',
+      duration: 60,
+      energyCost: 10,
+      moneyCost: 0,
+      moodChange: 10,
+      stressChange: -5,
+      canInviteNPC: true,
+      romanticPotential: false,
+    },
+  ],
+
+  interactionPoints: [
+    { id: 'studio_floor', name: 'Studio Floor', description: 'Desks scattered with color swatches', privateLevel: 20 },
+    { id: 'photo_corner', name: 'Photo Corner', description: 'Backdrops and lighting rigs', privateLevel: 40 },
+  ],
+
+  discoveryZones: [],
+  regularNPCs: [],
+  staffNPCs: [],
+
+  connectedLocations: [
+    { locationId: 'downtown_cafe', travelTime: 6 },
+    { locationId: 'bookstore', travelTime: 8 },
+  ],
+});
+
+export const createLawFirm = (): Location => ({
+  id: 'law_firm',
+  name: 'Westbrook & Finch',
+  type: 'office',
+  description: 'A formal law office with polished wood, quiet offices, and an air of seriousness.',
+
+  unlocked: true,
+  unlockRequirements: [],
+
+  openHours: { open: 8, close: 19 },
+  closedDays: ['saturday', 'sunday'],
+
+  noiseLevel: 'quiet',
+  crowdLevel: 'sparse',
+  ambiance: 'Muffled voices behind doors and the soft rustle of paperwork.',
+
+  availableActivities: [
+    {
+      id: 'paperwork',
+      name: 'Handle paperwork',
+      description: 'Sort documents and get organized',
+      duration: 60,
+      energyCost: 15,
+      moneyCost: 0,
+      moodChange: -2,
+      stressChange: 5,
+      canInviteNPC: false,
+      romanticPotential: false,
+    },
+  ],
+
+  interactionPoints: [
+    { id: 'reception', name: 'Reception', description: 'A quiet desk and a waiting area', privateLevel: 10 },
+    { id: 'office_hall', name: 'Office Hall', description: 'Private offices line the corridor', privateLevel: 30 },
+  ],
+
+  discoveryZones: [],
+  regularNPCs: [],
+  staffNPCs: [],
+
+  connectedLocations: [
+    { locationId: 'downtown_cafe', travelTime: 8 },
+    { locationId: 'upscale_restaurant', travelTime: 10 },
+  ],
+});
+
+export const createArchitectureFirm = (): Location => ({
+  id: 'architecture_firm',
+  name: 'Skyline Atelier',
+  type: 'office',
+  description: 'A bright studio with drafting tables, models, and big windows overlooking the city.',
+
+  unlocked: true,
+  unlockRequirements: [],
+
+  openHours: { open: 9, close: 19 },
+  closedDays: ['saturday', 'sunday'],
+
+  noiseLevel: 'quiet',
+  crowdLevel: 'sparse',
+  ambiance: 'The scent of fresh paper and the calm focus of people building ideas into plans.',
+
+  availableActivities: [
+    {
+      id: 'sketch',
+      name: 'Sketch concepts',
+      description: 'Spend time sketching and planning',
+      duration: 60,
+      energyCost: 10,
+      moneyCost: 0,
+      moodChange: 5,
+      stressChange: -2,
+      canInviteNPC: true,
+      romanticPotential: false,
+    },
+  ],
+
+  interactionPoints: [
+    { id: 'drafting', name: 'Drafting Area', description: 'Large tables covered in plans', privateLevel: 20 },
+    { id: 'model_shelf', name: 'Model Shelf', description: 'Miniature buildings and prototypes', privateLevel: 30 },
+  ],
+
+  discoveryZones: [],
+  regularNPCs: [],
+  staffNPCs: [],
+
+  connectedLocations: [
+    { locationId: 'downtown_cafe', travelTime: 7 },
+    { locationId: 'city_park', travelTime: 10 },
+  ],
+});
+
+export const createRestaurantDistrict = (): Location => ({
+  id: 'restaurant',
+  name: 'Downtown Bistro',
+  type: 'restaurant',
+  description: 'A cozy downtown restaurant with warm lights and the comforting smell of fresh food.',
+
+  unlocked: true,
+  unlockRequirements: [],
+
+  openHours: { open: 11, close: 23 },
+  closedDays: [],
+
+  noiseLevel: 'moderate',
+  crowdLevel: 'moderate',
+  ambiance: 'Soft chatter, clinking cutlery, and the occasional laugh from a nearby table.',
+
+  dressCode: 'casual',
+  minFormalityLevel: 1,
+
+  availableActivities: [
+    {
+      id: 'grab_lunch',
+      name: 'Grab a meal',
+      description: 'Order something comforting',
+      duration: 60,
+      energyCost: -10,
+      moneyCost: 25,
+      moodChange: 15,
+      stressChange: -10,
+      canInviteNPC: true,
+      romanticPotential: true,
+    },
+  ],
+
+  interactionPoints: [
+    { id: 'front_tables', name: 'Front Tables', description: 'Tables by the window', privateLevel: 30 },
+    { id: 'back_corner', name: 'Back Corner', description: 'A quieter corner away from the door', privateLevel: 70 },
+  ],
+
+  discoveryZones: [],
+  regularNPCs: [],
+  staffNPCs: [],
+
+  connectedLocations: [
+    { locationId: 'downtown_cafe', travelTime: 6 },
+    { locationId: 'the_corner_bar', travelTime: 8 },
+  ],
+});
+
+export const createCoworkingSpace = (): Location => ({
+  id: 'freelance',
+  name: 'CoWork Loft',
+  type: 'office',
+  description: 'A shared coworking loft with flexible desks, good Wi‑Fi, and quiet focus.',
+
+  unlocked: true,
+  unlockRequirements: [],
+
+  openHours: { open: 7, close: 22 },
+  closedDays: [],
+
+  noiseLevel: 'moderate',
+  crowdLevel: 'moderate',
+  ambiance: 'A gentle hum of productivity—laptops open, coffee cups nearby, and occasional friendly nods.',
+
+  availableActivities: [
+    {
+      id: 'freelance_session',
+      name: 'Work on a project',
+      description: 'Put in focused time on your craft',
+      duration: 120,
+      energyCost: 20,
+      moneyCost: 8,
+      moodChange: 0,
+      stressChange: 5,
+      canInviteNPC: false,
+      romanticPotential: false,
+    },
+  ],
+
+  interactionPoints: [
+    { id: 'open_desks', name: 'Open Desks', description: 'Rows of shared desks', privateLevel: 10 },
+    { id: 'quiet_room', name: 'Quiet Room', description: 'A calmer room for deep focus', privateLevel: 40 },
+  ],
+
+  discoveryZones: [],
+  regularNPCs: [],
+  staffNPCs: [],
+
+  connectedLocations: [
+    { locationId: 'downtown_cafe', travelTime: 5 },
+    { locationId: 'bookstore', travelTime: 10 },
+  ],
+});
+
 // Factory function to get all starter locations
 export const getStarterLocations = (): Location[] => [
   createHomeLocation(),
@@ -841,4 +1275,14 @@ export const getStarterLocations = (): Location[] => [
   createBookstore(),
   createYogaStudio(),
   createFarmersMarket(),
+  // Support NPC work/home schedules
+  createNPCResidentialBlock(),
+  createTechCompany(),
+  createHospital(),
+  createSchool(),
+  createDesignStudio(),
+  createLawFirm(),
+  createArchitectureFirm(),
+  createRestaurantDistrict(),
+  createCoworkingSpace(),
 ];

@@ -1,22 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## Life Simulator RPG (Roleplay Chat Bot Game)
+
+A Next.js-based life sim / romance RPG where you explore locations, meet NPCs, and roleplay via a narrative window and direct NPC chat. It supports AI-powered dialogue/narration (Grok) with offline fallbacks so the game is still playable without keys.
 
 ## Getting Started
 
-First, run the development server:
+First, install dependencies and run the development server:
 
 ```bash
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000` with your browser to play.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### How to play (MVP loop)
+
+- **New Game** → create your character and world.
+- **Narrative Window** → type actions freely or click generated choices.
+- **Meet NPCs** → approach people in a location, then chat in-person (narrative) or open the dedicated chat modal from an NPC profile.
+- **Travel** → open the map and move between locations (time advances on travel).
+- **Time** → game time advances automatically, and respects the **speed controls** (0.5x / 1x / 2x).
+
+### Optional AI keys
+
+If you want AI-generated dialogue and narration:
+
+- **Grok / xAI**: set `XAI_API_KEY` (or `NEXT_PUBLIC_XAI_API_KEY`)
+
+If you want generated images (city map / NPC portraits):
+
+- **OpenAI**: set `OPENAI_API_KEY` (or `NEXT_PUBLIC_OPENAI_API_KEY`)
+
+See `.env.example` for the full list.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
