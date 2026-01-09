@@ -25,6 +25,10 @@ export default function Home() {
   const [screen, setScreen] = useState<GameScreen>('loading');
   const tickAccumulatorRef = useRef(0);
 
+  // Grok key prompt (in-game, stored locally)
+  const [showGrokKeyPrompt, setShowGrokKeyPrompt] = useState(false);
+  const [grokKeyInput, setGrokKeyInput] = useState('');
+
   // UI State
   const [showPhone, setShowPhone] = useState(false);
   const [showMap, setShowMap] = useState(false);
@@ -82,6 +86,17 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [screen, initialized, advanceTime, paused, gameSpeed]);
 
+  // Prompt for Grok key if none is configured (no .env required)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const envKey = process.env.NEXT_PUBLIC_XAI_API_KEY;
+    const stored = window.localStorage.getItem('xai_api_key');
+    if (!envKey && !stored) {
+      const t = setTimeout(() => setShowGrokKeyPrompt(true), 0);
+      return () => clearTimeout(t);
+    }
+  }, []);
+
   // Loading Screen
   if (screen === 'loading') {
     return (
@@ -98,6 +113,48 @@ export default function Home() {
   if (screen === 'title') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex items-center justify-center">
+        {showGrokKeyPrompt && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+            <div className="w-full max-w-lg bg-gray-900 border border-gray-700 rounded-2xl p-6">
+              <h2 className="text-xl font-bold text-white mb-2">Enable Grok Dialogue (Optional)</h2>
+              <p className="text-sm text-gray-400 mb-4">
+                Paste your xAI Grok API key to enable AI narration and dialogue. It will be stored locally on this device.
+              </p>
+              <input
+                value={grokKeyInput}
+                onChange={(e) => setGrokKeyInput(e.target.value)}
+                placeholder="xai-..."
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+              <div className="flex gap-3 mt-4">
+                <button
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      if (grokKeyInput.trim()) window.localStorage.setItem('xai_api_key', grokKeyInput.trim());
+                    }
+                    setShowGrokKeyPrompt(false);
+                    setGrokKeyInput('');
+                  }}
+                  className="flex-1 px-4 py-3 bg-purple-600 hover:bg-purple-500 rounded-xl text-white font-semibold"
+                >
+                  Save key
+                </button>
+                <button
+                  onClick={() => {
+                    setShowGrokKeyPrompt(false);
+                    setGrokKeyInput('');
+                  }}
+                  className="flex-1 px-4 py-3 bg-gray-800 hover:bg-gray-700 rounded-xl text-white font-semibold"
+                >
+                  Skip
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-3">
+                Security note: don&apos;t share your key; avoid streaming/recording it.
+              </p>
+            </div>
+          </div>
+        )}
         <div className="text-center">
           <div className="flex items-center justify-center gap-3 mb-4">
             <Heart className="w-12 h-12 text-pink-500" />
